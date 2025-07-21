@@ -59,8 +59,8 @@ interface TelegramWebApp {
     isVisible: boolean
     isActive: boolean
     show: () => void
-    hide: () => void
     onClick: (callback: () => void) => void
+    hide: () => void
   }
   HapticFeedback: {
     impactOccurred: (style: "light" | "medium" | "heavy" | "rigid" | "soft") => void
@@ -516,13 +516,13 @@ export default function WheelGame() {
             )
 
             // Reload match history
-            await loadMatchHistory()
+            await loadMatchHistory(10) // Load only recent history after game completion
           } catch (error) {
             console.error("Failed to complete game in database:", error)
           }
         }
 
-        // Add to match history
+        // Add to match history (local state for immediate display)
         const matchEntry: MatchHistoryEntry = {
           id: Date.now().toString(),
           rollNumber: rollNumber,
@@ -835,7 +835,7 @@ export default function WheelGame() {
       return
     }
 
-    const message = `Hi! I want to deposit my NFT gifts for PvP Wheel. My username: @${telegramUser?.username || telegramUser?.first_name || "user"}`
+    const message = `Hi! I want to deposit my NFT gifts for PvP Wheel. My username: @${NFT_DEPOSIT_TELEGRAM.substring(1)}`
     const telegramUrl = `https://t.me/${NFT_DEPOSIT_TELEGRAM.substring(1)}?text=${encodeURIComponent(message)}`
 
     if (webApp) {
@@ -911,20 +911,26 @@ export default function WheelGame() {
       webApp?.HapticFeedback?.notificationOccurred("error")
       alert("Maximum 15 players allowed!")
       return
+      alert("Unable to get player name!")
+      return
+    }
+
+    if (activePlayers.length >= 15) {
+      webApp?.HapticFeedback?.notificationOccurred("error")
+      alert("Maximum 15 players allowed!")
+      return
     }
 
     // Haptic feedback for successful join/add
     webApp?.HapticFeedback?.notificationOccurred("success")
 
     // Create gifts array and calculate total value
-    const selectedGiftEmojis: string[] = []
-    let totalGiftValue = 0
     const giftSelections: { giftId: string; quantity: number; totalValue: number }[] = []
+    let totalGiftValue = 0
 
     selectedGifts.forEach((selected) => {
       const gift = userInventory.find((g) => g.id === selected.id)
       if (gift) {
-        selectedGiftEmojis.push(...Array(selected.quantity).fill(gift.emoji))
         totalGiftValue += gift.value * selected.quantity
         giftSelections.push({
           giftId: gift.id,
@@ -942,16 +948,24 @@ export default function WheelGame() {
     if (currentGameId && currentPlayer) {
       try {
         await joinGameWithGifts(currentGameId, currentPlayer.id, giftSelections, playerColor, playerPosition, name) // Pass player name
-        addToLog(`🎉 ${name} added ${selectedGiftEmojis.length} gifts worth ${totalGiftValue.toFixed(3)} TON!`, "join")
+        // The log message is now handled by the RPC function in Supabase for consistency
         setSelectedGifts([])
         setShowGiftPopup(false)
-        // Participants will be reloaded by subscription
+        // Participants and inventory will be reloaded by subscription
       } catch (error) {
         console.error("Failed to add gifts to game:", error)
         addToLog(`❌ Failed to add gifts: ${dbError || "Unknown error"}`, "error")
       }
     } else {
       // Fallback for offline mode (no database connection)
+      const selectedGiftEmojis: string[] = []
+      selectedGifts.forEach((selected) => {
+        const gift = userInventory.find((g) => g.id === selected.id)
+        if (gift) {
+          selectedGiftEmojis.push(...Array(selected.quantity).fill(gift.emoji))
+        }
+      })
+
       const newPlayer: Player = {
         id: Date.now().toString(),
         name,
