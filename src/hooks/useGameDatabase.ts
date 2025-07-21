@@ -1,49 +1,34 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { dbHelpers } from "../lib/supabase"
-import type { Database } from "../../types/supabase"
+import type { Database } from "../../database.types"
 
-// Define types for better readability and type safety
-type PlayerDB = Database["public"]["Tables"]["players"]["Row"]
-type GameDB = Database["public"]["Tables"]["games"]["Row"] & {
-  game_participants?: (Database["public"]["Tables"]["game_participants"]["Row"] & {
-    players?: PlayerDB
-  })[]
-}
-type GameParticipantDB = Database["public"]["Tables"]["game_participants"]["Row"] & {
-  players?: PlayerDB
-}
-type GameLogDB = Database["public"]["Tables"]["game_logs"]["Row"]
-type PlayerGiftDB = Database["public"]["Tables"]["player_gifts"]["Row"] & {
-  gifts?: Database["public"]["Tables"]["gifts"]["Row"]
-}
-type GiftTypeDB = Database["public"]["Tables"]["gifts"]["Row"]
-
-interface Player {
+// Define types for clarity
+type Player = {
   id: string
   name: string
-  balance: number // This might be removed if only gifts are used
+  balance: number
   color: string
   gifts: string[] // Array of gift emojis
   giftValue: number // Total TON value of gifts
   telegramUser?: {
     id: number
-    first_name: string
-    last_name?: string
     username?: string
+    first_name?: string
+    last_name?: string
     photo_url?: string
   }
 }
 
-interface GameLog {
+type GameLog = {
   id: string
   message: string
   timestamp: Date
   type: "join" | "spin" | "winner" | "info"
 }
 
-interface MatchHistoryEntry {
+type MatchHistoryEntry = {
   id: string
   rollNumber: number
   timestamp: Date
@@ -53,99 +38,145 @@ interface MatchHistoryEntry {
   winnerChance: number
 }
 
+type GiftType = {
+  id: string
+  emoji: string
+  name: string
+  value: number // TON value
+  rarity: "common" | "rare" | "epic" | "legendary"
+  quantity: number
+  nft_address?: string // TON NFT collection address
+  nft_item_id?: string // Specific NFT item ID
+  is_nft?: boolean // Whether this is an NFT gift
+}
+
 export function useGameDatabase() {
   const [currentGameId, setCurrentGameId] = useState<string | null>(null)
-  const [currentPlayer, setCurrentPlayer] = useState<PlayerDB | null>(null)
+  const [currentPlayer, setCurrentPlayer] = useState<Database["public"]["Tables"]["players"]["Row"] | null>(null)
   const [dbPlayers, setDbPlayers] = useState<Player[]>([])
   const [dbGameLogs, setDbGameLogs] = useState<GameLog[]>([])
   const [dbMatchHistory, setDbMatchHistory] = useState<MatchHistoryEntry[]>([])
-  const [playerInventory, setPlayerInventory] = useState<PlayerGiftDB[]>([])
-  const [availableGifts, setAvailableGifts] = useState<GiftTypeDB[]>([])
+  const [playerInventory, setPlayerInventory] = useState<
+    (Database["public"]["Tables"]["player_gifts"]["Row"] & {
+      gifts: Database["public"]["Tables"]["gifts"]["Row"] | null
+    })[]
+  >([])
+  const [availableGifts, setAvailableGifts] = useState<Database["public"]["Tables"]["gifts"]["Row"][]>([])
   const [gameCountdown, setGameCountdown] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const clearError = useCallback(() => {
     setError(null)
   }, [])
 
-  const initializePlayer = useCallback(async (telegramUser: any) => {
-    setLoading(true)
-    setError(null)
-    try {
-      let player = await dbHelpers.getPlayerByTelegramId(telegramUser.id)
-      if (!player) {
-        player = await dbHelpers.createPlayer(
-          telegramUser.id,
-          telegramUser.username,
-          telegramUser.first_name,
-          telegramUser.last_name,
-          telegramUser.photo_url,
-        )
+  // Helper to map DB player data to frontend Player interface
+  const mapDbPlayerToFrontendPlayer = useCallback(
+    (
+      dbPlayer:
+        | Database["public"]["Tables"]["players"]["Row"]
+        | (Database["public"]["Tables"]["game_participants"]["Row"] & {
+            players: Database["public"]["Tables"]["players"]["Row"] | null
+          }),
+      color: string,
+      giftValue: number,
+      giftsEmojis: string[],
+    ): Player => {
+      const telegramUser = {
+        id: dbPlayer.telegram_user_id || 0, // Assuming telegram_user_id is always present for DB players
+        username: dbPlayer.username || undefined,
+        first_name: dbPlayer.first_name || undefined,
+        last_name: dbPlayer.last_name || undefined,
+        photo_url: dbPlayer.photo_url || undefined,
       }
-      setCurrentPlayer(player)
-      // Load inventory after player is initialized
-    } catch (err: any) {
-      console.error("Failed to initialize player:", err)
-      setError(`Failed to initialize player: ${err.message || err.toString()}`)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
 
+      return {
+        id: dbPlayer.id,
+        name: dbPlayer.username || dbPlayer.first_name || `User${dbPlayer.telegram_user_id}`,
+        balance: 0, // Balance is not managed here, only gift value
+        color: color,
+        gifts: giftsEmojis,
+        giftValue: giftValue,
+        telegramUser: telegramUser,
+      }
+    },
+    [],
+  )
+
+  // Initialize player
+  const initializePlayer = useCallback(
+    async (telegramUser: {
+      id: number
+      username?: string
+      first_name?: string
+      last_name?: string
+      photo_url?: string
+    }) => {
+      setLoading(true)
+      try {
+        const player = await dbHelpers.initializePlayer(telegramUser)
+        setCurrentPlayer(player)
+        // Load player inventory immediately after initialization
+        if (player) {
+          await loadPlayerInventory(player.id)
+        }
+        return player
+      } catch (err: any) {
+        console.error("Error initializing player:", err)
+        setError(err.message || "Failed to initialize player.")
+        return null
+      } finally {
+        setLoading(false)
+      }
+    },
+    [],
+  )
+
+  // Get current game or create new
   const getCurrentGame = useCallback(async (rollNumber: number) => {
     setLoading(true)
-    setError(null)
     try {
       const game = await dbHelpers.getCurrentGame(rollNumber)
-      if (game) {
-        setCurrentGameId(game.id)
-        setGameCountdown(game.countdown_seconds) // Assuming countdown_seconds is a column in games table
-        return game
+      setCurrentGameId(game.id)
+      return game
+    } catch (err: any) {
+      console.error("Error getting current game:", err)
+      setError(err.message || "Failed to get current game.")
+      return null
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Load game participants for a given game ID
+  const loadGameParticipants = useCallback(
+    async (gameId: string) => {
+      setLoading(true)
+      try {
+        const { data, error } = await dbHelpers.supabase
+          .from("game_participants")
+          .select("*, players(*), game_participant_gifts(gifts(emoji))")
+          .eq("game_id", gameId)
+          .order("position", { ascending: true })
+
+        if (error) throw error
+
+        const mappedPlayers: Player[] = data.map((p) => {
+          const giftEmojis = p.game_participant_gifts.map((gpg) => gpg.gifts?.emoji).filter(Boolean) as string[]
+          return mapDbPlayerToFrontendPlayer(p.players!, p.color, p.gift_value, giftEmojis)
+        })
+        setDbPlayers(mappedPlayers)
+      } catch (err: any) {
+        console.error("Error loading game participants:", err)
+        setError(err.message || "Failed to load game participants.")
+      } finally {
+        setLoading(false)
       }
-      return null
-    } catch (err: any) {
-      console.error("Failed to get current game:", err)
-      setError(`Failed to get current game: ${err.message || err.toString()}`)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    [mapDbPlayerToFrontendPlayer],
+  )
 
-  const loadGameParticipants = useCallback(async (gameId: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const participants = await dbHelpers.getGameParticipants(gameId)
-      const formattedPlayers: Player[] = participants.map((p) => ({
-        id: p.player_id,
-        name: p.player_name || p.players?.username || p.players?.first_name || `Player ${p.player_id.substring(0, 4)}`,
-        balance: 0, // Balance is not used for wheel logic, only giftValue
-        color: p.color || "#CCCCCC", // Default color if not set
-        gifts: p.gifts_array || [],
-        giftValue: p.gift_value || 0,
-        telegramUser: p.players
-          ? {
-              id: p.players.telegram_user_id,
-              first_name: p.players.first_name || "",
-              username: p.players.username || undefined,
-              photo_url: p.players.photo_url || undefined,
-            }
-          : undefined,
-      }))
-      setDbPlayers(formattedPlayers)
-    } catch (err: any) {
-      console.error("Failed to load game participants:", err)
-      setError(`Failed to load game participants: ${err.message || err.toString()}`)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
+  // Join game with gifts (uses RPC)
   const joinGameWithGifts = useCallback(
     async (
       gameId: string,
@@ -153,17 +184,15 @@ export function useGameDatabase() {
       giftSelections: { giftId: string; quantity: number; totalValue: number }[],
       playerColor: string,
       playerPosition: number,
-      playerName: string, // Pass player name to RPC
+      playerName: string,
     ) => {
       setLoading(true)
-      setError(null)
       try {
-        await dbHelpers.addGiftsToGame(gameId, playerId, giftSelections, playerColor, playerPosition, playerName)
-        // Data will be updated via realtime subscription, no need to manually setDbPlayers
+        await dbHelpers.joinGame(gameId, playerId, giftSelections, playerColor, playerPosition, playerName)
+        // Subscriptions will handle state updates for players and inventory
       } catch (err: any) {
-        console.error("Failed to join game with gifts:", err)
-        setError(`Failed to add gifts: ${err.message || err.toString()}`)
-        throw err // Re-throw to allow UI to handle
+        console.error("Error joining game with gifts:", err)
+        setError(err.message || "Failed to join game with gifts.")
       } finally {
         setLoading(false)
       }
@@ -171,16 +200,15 @@ export function useGameDatabase() {
     [],
   )
 
+  // Complete game
   const completeGame = useCallback(
     async (gameId: string, winnerPlayerId: string, winnerChance: number, totalPot: number) => {
       setLoading(true)
-      setError(null)
       try {
         await dbHelpers.completeGame(gameId, winnerPlayerId, winnerChance, totalPot)
-        // Game status will be updated via subscription
       } catch (err: any) {
-        console.error("Failed to complete game:", err)
-        setError(`Failed to complete game: ${err.message || err.toString()}`)
+        console.error("Error completing game:", err)
+        setError(err.message || "Failed to complete game.")
       } finally {
         setLoading(false)
       }
@@ -188,181 +216,115 @@ export function useGameDatabase() {
     [],
   )
 
-  const addGameLog = useCallback(async (gameId: string, playerId: string | null, logType: string, message: string) => {
+  // Add game log
+  const addGameLog = useCallback(async (gameId: string, playerId: string | null, type: string, message: string) => {
     try {
-      await dbHelpers.addGameLog(gameId, playerId, logType, message)
-      // Log will be added via subscription
+      await dbHelpers.addGameLog(gameId, playerId, type, message)
     } catch (err: any) {
-      console.error("Failed to add game log:", err)
-      // Don't set global error for logs, just console error
+      console.error("Error adding game log:", err)
+      setError(err.message || "Failed to add game log.")
     }
   }, [])
 
-  const loadGameLogs = useCallback(async (gameId: string) => {
-    try {
-      const logs = await dbHelpers.getGameLogs(gameId)
-      const formattedLogs: GameLog[] = logs.map((log) => ({
-        id: log.id,
-        message: log.message,
-        timestamp: new Date(log.created_at),
-        type: log.log_type as GameLog["type"],
-      }))
-      setDbGameLogs(formattedLogs)
-    } catch (err: any) {
-      console.error("Failed to load game logs:", err)
-      // Don't set global error for logs, just console error
-    }
-  }, [])
-
-  const loadMatchHistory = useCallback(async (limit = 10) => {
+  // Load match history
+  const loadMatchHistory = useCallback(async (limit?: number) => {
     setLoading(true)
-    setError(null)
     try {
       const history = await dbHelpers.getMatchHistory(limit)
-      const formattedHistory: MatchHistoryEntry[] = history.map((game) => ({
-        id: game.id,
-        rollNumber: game.roll_number,
-        timestamp: new Date(game.ended_at || game.created_at),
-        players:
-          game.game_participants?.map((p) => ({
-            id: p.player_id,
-            name:
-              p.player_name || p.players?.username || p.players?.first_name || `Player ${p.player_id.substring(0, 4)}`,
-            balance: 0,
-            color: p.color || "#CCCCCC",
-            gifts: p.gifts_array || [],
-            giftValue: p.gift_value || 0,
-            telegramUser: p.players
-              ? {
-                  id: p.players.telegram_user_id,
-                  first_name: p.players.first_name || "",
-                  username: p.players.username || undefined,
-                  photo_url: p.players.photo_url || undefined,
-                }
-              : undefined,
-          })) || [],
-        winner: {
-          id: game.winner_player_id!,
-          name: game.winner_player?.username || game.winner_player?.first_name || "Unknown Winner",
-          balance: 0,
-          color: "#CCCCCC", // Placeholder, actual color not stored in winner_player
-          gifts: [], // Not directly available here
-          giftValue: game.total_pot_balance || 0,
-          telegramUser: game.winner_player
-            ? {
-                id: game.winner_player.telegram_user_id,
-                first_name: game.winner_player.first_name || "",
-                username: game.winner_player.username || undefined,
-                photo_url: game.winner_player.photo_url || undefined,
-              }
-            : undefined,
-        },
-        totalPot: game.total_pot_balance || 0,
-        winnerChance: game.winner_chance || 0,
-      }))
-      setDbMatchHistory(formattedHistory)
+      setDbMatchHistory(history)
     } catch (err: any) {
-      console.error("Failed to load match history:", err)
-      setError(`Failed to load match history: ${err.message || err.toString()}`)
+      console.error("Error loading match history:", err)
+      setError(err.message || "Failed to load match history.")
     } finally {
       setLoading(false)
     }
   }, [])
 
+  // Load player inventory
   const loadPlayerInventory = useCallback(async (playerId: string) => {
     setLoading(true)
-    setError(null)
     try {
       const inventory = await dbHelpers.getPlayerInventory(playerId)
       setPlayerInventory(inventory)
     } catch (err: any) {
-      console.error("Failed to load player inventory:", err)
-      setError(`Failed to load player inventory: ${err.message || err.toString()}`)
+      console.error("Error loading player inventory:", err)
+      setError(err.message || "Failed to load player inventory.")
     } finally {
       setLoading(false)
     }
   }, [])
 
+  // Load available gifts
+  const loadAvailableGifts = useCallback(async () => {
+    setLoading(true)
+    try {
+      const gifts = await dbHelpers.getAvailableGifts()
+      setAvailableGifts(gifts)
+    } catch (err: any) {
+      console.error("Error loading available gifts:", err)
+      setError(err.message || "Failed to load available gifts.")
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Start game countdown (client-side for now)
   const startGameCountdown = useCallback(async (gameId: string, duration: number) => {
-    // This function might be called by an admin or server action
-    // For now, we'll just update the local state and rely on DB subscription
-    // In a real app, this would trigger a server-side countdown
     setGameCountdown(duration)
-    // Potentially update DB to start countdown
+    // In a real app, you might trigger a server-side countdown here
   }, [])
 
+  // Get game countdown (client-side for now)
   const getGameCountdown = useCallback(async (gameId: string) => {
-    // This function might fetch the current countdown from DB
-    // For now, we rely on the subscription
+    // In a real app, you might fetch countdown from server here
+    return null
   }, [])
 
-  // Effect for realtime subscriptions
+  // --- Subscriptions ---
   useEffect(() => {
     if (!currentGameId) return
 
-    // Subscribe to game participants
-    const participantsSubscription = dbHelpers.subscribeToGameParticipants(currentGameId, (payload) => {
+    const participantsChannel = dbHelpers.subscribeToGameParticipants(currentGameId, (payload) => {
       console.log("Participants change:", payload)
-      if (payload.eventType === "INSERT" || payload.eventType === "UPDATE" || payload.eventType === "DELETE") {
-        loadGameParticipants(currentGameId) // Reload participants on any change
-      }
+      // Reload participants to get updated data including gift emojis
+      loadGameParticipants(currentGameId)
     })
 
-    // Subscribe to game logs
-    const logsSubscription = dbHelpers.subscribeToGameLogs(currentGameId, (payload) => {
+    const logsChannel = dbHelpers.subscribeToGameLogs(currentGameId, (payload) => {
       console.log("Game log change:", payload)
-      if (payload.eventType === "INSERT") {
-        loadGameLogs(currentGameId) // Reload logs on new entry
+      const newLog: GameLog = {
+        id: payload.new.id,
+        message: payload.new.message,
+        timestamp: new Date(payload.new.created_at),
+        type: payload.new.log_type,
       }
+      setDbGameLogs((prev) => [newLog, ...prev.slice(0, 19)])
     })
-
-    // Subscribe to game status/countdown changes
-    const gameSubscription = dbHelpers.subscribeToGames(currentGameId, (payload) => {
-      console.log("Game change:", payload)
-      if (payload.eventType === "UPDATE" && payload.new.countdown_seconds !== undefined) {
-        setGameCountdown(payload.new.countdown_seconds)
-      }
-      if (payload.eventType === "UPDATE" && payload.new.status === "completed") {
-        // Game completed, clear players and reset game ID
-        setDbPlayers([])
-        setCurrentGameId(null)
-        setGameCountdown(null)
-        loadMatchHistory(10) // Reload recent match history
-      }
-    })
-
-    // Initial load of participants and logs for the current game
-    loadGameParticipants(currentGameId)
-    loadGameLogs(currentGameId)
-    loadMatchHistory(10) // Load initial recent match history
 
     return () => {
-      participantsSubscription.unsubscribe()
-      logsSubscription.unsubscribe()
-      gameSubscription.unsubscribe()
+      participantsChannel.unsubscribe()
+      logsChannel.unsubscribe()
     }
-  }, [currentGameId, loadGameParticipants, loadGameLogs, loadMatchHistory])
+  }, [currentGameId, loadGameParticipants])
 
-  // Countdown timer effect
   useEffect(() => {
-    if (gameCountdown !== null && gameCountdown > 0) {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current)
-      }
-      countdownIntervalRef.current = setInterval(() => {
-        setGameCountdown((prev) => (prev !== null && prev > 0 ? prev - 1 : 0))
-      }, 1000)
-    } else if (gameCountdown === 0 && countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current)
-      countdownIntervalRef.current = null
-    }
+    if (!currentPlayer?.id) return
+
+    const inventoryChannel = dbHelpers.subscribeToPlayerInventory(currentPlayer.id, (payload) => {
+      console.log("Player inventory change:", payload)
+      // Reload player inventory to get updated data
+      loadPlayerInventory(currentPlayer.id)
+    })
 
     return () => {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current)
-      }
+      inventoryChannel.unsubscribe()
     }
-  }, [gameCountdown])
+  }, [currentPlayer?.id, loadPlayerInventory])
+
+  // Initial load of available gifts
+  useEffect(() => {
+    loadAvailableGifts()
+  }, [loadAvailableGifts])
 
   return {
     currentGameId,
@@ -371,20 +333,20 @@ export function useGameDatabase() {
     dbGameLogs,
     dbMatchHistory,
     playerInventory,
-    availableGifts, // This is not currently populated from DB, consider adding a loadAvailableGifts
+    availableGifts,
     gameCountdown,
     loading,
     error,
+    clearError,
     initializePlayer,
     getCurrentGame,
     joinGameWithGifts,
     completeGame,
     addGameLog,
+    loadMatchHistory,
     loadGameParticipants,
-    loadMatchHistory, // Expose loadMatchHistory for manual refresh/full load
     startGameCountdown,
     getGameCountdown,
-    clearError,
     loadPlayerInventory,
   }
 }
