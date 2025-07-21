@@ -941,7 +941,7 @@ export default function WheelGame() {
     // Join game in database (this function now handles both new joins and adding more gifts)
     if (currentGameId && currentPlayer) {
       try {
-        await joinGameWithGifts(currentGameId, currentPlayer.id, giftSelections, playerColor, playerPosition)
+        await joinGameWithGifts(currentGameId, currentPlayer.id, giftSelections, playerColor, playerPosition, name) // Pass player name
         addToLog(`🎉 ${name} added ${selectedGiftEmojis.length} gifts worth ${totalGiftValue.toFixed(3)} TON!`, "join")
         setSelectedGifts([])
         setShowGiftPopup(false)
@@ -1084,7 +1084,10 @@ export default function WheelGame() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setShowMatchHistory(true)}
+                    onClick={() => {
+                      loadMatchHistory(50) // Load full history when opening modal
+                      setShowMatchHistory(true)
+                    }}
                     className="text-gray-300 hover:text-white"
                   >
                     <History className="h-4 w-4 mr-2" /> Match History
