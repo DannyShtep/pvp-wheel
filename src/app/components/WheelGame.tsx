@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useGameDatabase } from "../../hooks/useGameDatabase"
-import Image from "next/image" // Import Image component for avatars
 
 // Shadcn UI components
 import { Button } from "@/components/ui/button"
@@ -30,6 +29,7 @@ import {
   Zap,
   AlertCircle,
 } from "lucide-react"
+import Image from "next/image"
 
 // Telegram WebApp types
 interface TelegramUser {
@@ -934,24 +934,21 @@ export default function WheelGame() {
       }
     })
 
-    // Determine player color and position
+    // Determine player color and position (only relevant for new participants)
     const playerColor = COLORS[activePlayers.length % COLORS.length]
     const playerPosition = activePlayers.length
 
-    // Join game in database
+    // Join game in database (this function now handles both new joins and adding more gifts)
     if (currentGameId && currentPlayer) {
       try {
         await joinGameWithGifts(currentGameId, currentPlayer.id, giftSelections, playerColor, playerPosition)
-        addToLog(
-          `🎉 ${name} joined with ${selectedGiftEmojis.length} gifts worth ${totalGiftValue.toFixed(3)} TON!`,
-          "join",
-        )
+        addToLog(`🎉 ${name} added ${selectedGiftEmojis.length} gifts worth ${totalGiftValue.toFixed(3)} TON!`, "join")
         setSelectedGifts([])
         setShowGiftPopup(false)
         // Participants will be reloaded by subscription
       } catch (error) {
-        console.error("Failed to join game with gifts:", error)
-        addToLog(`❌ Failed to join game: ${dbError || "Unknown error"}`, "error")
+        console.error("Failed to add gifts to game:", error)
+        addToLog(`❌ Failed to add gifts: ${dbError || "Unknown error"}`, "error")
       }
     } else {
       // Fallback for offline mode (no database connection)
