@@ -1,708 +1,323 @@
-import { createClient } from "@supabase/supabase-js"
-
-// Supabase configuration
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("❌ Missing Supabase environment variables")
-  console.error("NEXT_PUBLIC_SUPABASE_URL:", supabaseUrl ? "Set" : "Missing")
-  console.error("NEXT_PUBLIC_SUPABASE_ANON_KEY:", supabaseAnonKey ? "Set" : "Missing")
-  throw new Error("Missing Supabase environment variables")
-}
-
-// Create Supabase client
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-})
-
-// Initialize Supabase connection with retry logic
-export const initializeSupabase = async () => {
-  const MAX_RETRIES = 3
-  const RETRY_DELAY = 2000 // 2 seconds
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      console.log(`🔄 Attempting to connect to Supabase (attempt ${attempt}/${MAX_RETRIES})...`)
-
-      // Test the connection with a simple query
-      const { data, error } = await supabase.from("games").select("id").limit(1)
-
-      if (error) throw error
-
-      console.log("✅ Supabase client initialized for PvP Wheel")
-      return true
-    } catch (err) {
-      console.error(`❌ Failed to connect (attempt ${attempt}/${MAX_RETRIES}):`, err)
-
-      if (attempt < MAX_RETRIES) {
-        console.log(`⏳ Retrying in ${RETRY_DELAY / 1000} seconds...`)
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY))
-      } else {
-        console.error("❌ All connection attempts failed")
-        return false
-      }
-    }
-  }
-  return false
-}
-
-// Database types
-export interface Database {
-  public: {
-    Tables: {
-      players: {
-        Row: {
-          id: string
-          telegram_id: number
-          username: string
-          first_name: string | null
-          last_name: string | null
-          photo_url: string | null
-          is_premium: boolean
-          language_code: string | null
-          total_games_played: number
-          total_games_won: number
-          total_ton_won: number
-          total_gifts_won: number
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          telegram_id: number
-          username: string
-          first_name?: string | null
-          last_name?: string | null
-          photo_url?: string | null
-          is_premium?: boolean
-          language_code?: string | null
-          total_games_played?: number
-          total_games_won?: number
-          total_ton_won?: number
-          total_gifts_won?: number
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          telegram_id?: number
-          username?: string
-          first_name?: string | null
-          last_name?: string | null
-          photo_url?: string | null
-          is_premium?: boolean
-          language_code?: string | null
-          total_games_played?: number
-          total_games_won?: number
-          total_ton_won?: number
-          total_gifts_won?: number
-          created_at?: string
-          updated_at?: string
-        }
-      }
-      games: {
-        Row: {
-          id: string
-          roll_number: number
-          status: "waiting" | "spinning" | "completed" | "cancelled"
-          total_players: number
-          total_pot_balance: number
-          total_gift_value: number
-          winner_id: string | null
-          winner_chance: number | null
-          spin_timestamp: string | null
-          created_at: string
-          completed_at: string | null
-        }
-        Insert: {
-          id?: string
-          roll_number: number
-          status?: "waiting" | "spinning" | "completed" | "cancelled"
-          total_players?: number
-          total_pot_balance?: number
-          total_gift_value?: number
-          winner_id?: string | null
-          winner_chance?: number | null
-          spin_timestamp?: string | null
-          created_at?: string
-          completed_at?: string | null
-        }
-        Update: {
-          id?: string
-          roll_number?: number
-          status?: "waiting" | "spinning" | "completed" | "cancelled"
-          total_players?: number
-          total_pot_balance?: number
-          total_gift_value?: number
-          winner_id?: string | null
-          winner_chance?: number | null
-          spin_timestamp?: string | null
-          created_at?: string
-          completed_at?: string | null
-        }
-      }
-      game_participants: {
-        Row: {
-          id: string
-          game_id: string
-          player_id: string
-          balance: number
-          gift_value: number
-          color: string
-          position_index: number
-          chance_percentage: number | null
-          joined_at: string
-        }
-        Insert: {
-          id?: string
-          game_id: string
-          player_id: string
-          balance?: number
-          gift_value?: number
-          color: string
-          position_index: number
-          chance_percentage?: number | null
-          joined_at?: string
-        }
-        Update: {
-          id?: string
-          game_id?: string
-          player_id?: string
-          balance?: number
-          gift_value?: number
-          color?: string
-          position_index?: number
-          chance_percentage?: number | null
-          joined_at?: string
-        }
-      }
-      gifts: {
-        Row: {
-          id: string
-          emoji: string
-          name: string
-          base_value: number
-          rarity: "common" | "rare" | "epic" | "legendary"
-          is_active: boolean
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          emoji: string
-          name: string
-          base_value: number
-          rarity: "common" | "rare" | "epic" | "legendary"
-          is_active?: boolean
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          emoji?: string
-          name?: string
-          base_value?: number
-          rarity?: "common" | "rare" | "epic" | "legendary"
-          is_active?: boolean
-          created_at?: string
-        }
-      }
-      player_gifts: {
-        Row: {
-          id: string
-          player_id: string
-          gift_id: string
-          quantity: number
-          total_value: number
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          player_id: string
-          gift_id: string
-          quantity?: number
-          total_value?: number
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          player_id?: string
-          gift_id?: string
-          quantity?: number
-          total_value?: number
-          updated_at?: string
-        }
-      }
-      game_participant_gifts: {
-        Row: {
-          id: string
-          game_participant_id: string
-          gift_id: string
-          quantity: number
-          value_per_gift: number
-          total_value: number
-        }
-        Insert: {
-          id?: string
-          game_participant_id: string
-          gift_id: string
-          quantity?: number
-          value_per_gift: number
-          total_value: number
-        }
-        Update: {
-          id?: string
-          game_participant_id?: string
-          gift_id?: string
-          quantity?: number
-          value_per_gift?: number
-          total_value?: number
-        }
-      }
-      game_logs: {
-        Row: {
-          id: string
-          game_id: string
-          player_id: string | null
-          log_type: "join" | "spin" | "winner" | "info"
-          message: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          game_id: string
-          player_id?: string | null
-          log_type: "join" | "spin" | "winner" | "info"
-          message: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          game_id?: string
-          player_id?: string | null
-          log_type?: "join" | "spin" | "winner" | "info"
-          message?: string
-          created_at?: string
-        }
-      }
-    }
-  }
-}
-
-// Helper functions for database operations
-export const dbHelpers = {
-  // Test database connection
-  async testConnection() {
-    try {
-      console.log("Testing database connection...")
-      const { data, error } = await supabase.from("players").select("count").limit(1)
-
-      if (error) {
-        console.error("Database connection test failed:", error)
-        return { success: false, error }
-      }
-
-      console.log("Database connection test successful")
-      return { success: true, data }
-    } catch (err) {
-      console.error("Database connection test error:", err)
-      return { success: false, error: err }
-    }
-  },
-
-  // Players
-  async getOrCreatePlayer(telegramUser: any) {
-    try {
-      console.log("Searching for existing player with telegram_id:", telegramUser.id)
-
-      const { data: existingPlayer, error: fetchError } = await supabase
-        .from("players")
-        .select("*")
-        .eq("telegram_id", telegramUser.id)
-        .single()
-
-      if (fetchError) {
-        console.log("Fetch error (expected if player not found):", fetchError.message)
-
-        // If player not found, create new one
-        if (fetchError.code === "PGRST116") {
-          console.log("Player not found, creating new player...")
-
-          const newPlayerData = {
-            telegram_id: telegramUser.id,
-            username: telegramUser.username || telegramUser.first_name || `User${telegramUser.id}`,
-            first_name: telegramUser.first_name || null,
-            last_name: telegramUser.last_name || null,
-            photo_url: telegramUser.photo_url || null,
-            is_premium: telegramUser.is_premium || false,
-            language_code: telegramUser.language_code || null,
-          }
-
-          console.log("Creating player with data:", newPlayerData)
-
-          const { data: newPlayer, error: createError } = await supabase
-            .from("players")
-            .insert(newPlayerData)
-            .select()
-            .single()
-
-          if (createError) {
-            console.error("Error creating new player:", createError)
-            return { data: null, error: createError }
-          }
-
-          console.log("New player created successfully:", newPlayer)
-          return { data: newPlayer, error: null }
-        }
-
-        // Other errors
-        return { data: null, error: fetchError }
-      }
-
-      console.log("Found existing player:", existingPlayer)
-      return { data: existingPlayer, error: null }
-    } catch (err) {
-      console.error("Unexpected error in getOrCreatePlayer:", err)
-      return { data: null, error: err }
-    }
-  },
-
-  // Games
-  async getCurrentGame() {
-    const { data, error } = await supabase
-      .from("games")
-      .select(`
-        *,
-        game_participants (
-          *,
-          players (*),
-          game_participant_gifts (
-            quantity,
-            gifts (
-              emoji,
-              name,
-              base_value
-            )
-          )
-        )
-      `)
-      .eq("status", "waiting")
-      .order("created_at", { ascending: false })
-      .limit(1)
-
-    return { data: data?.[0] || null, error }
-  },
-
-  async createGame(rollNumber: number) {
-    // Set countdown to end 60 seconds from now when first participant joins
-    const { data, error } = await supabase
-      .from("games")
-      .insert({
-        roll_number: rollNumber,
-        status: "waiting",
-      })
-      .select()
-      .single()
-
-    return { data, error }
-  },
-
-  async startGameCountdown(gameId: string, durationSeconds = 60) {
-    const countdownEndsAt = new Date(Date.now() + durationSeconds * 1000).toISOString()
-
-    const { data, error } = await supabase
-      .from("games")
-      .update({ countdown_ends_at: countdownEndsAt })
-      .eq("id", gameId)
-      .select()
-      .single()
-
-    return { data, error }
-  },
-
-  async getGameCountdown(gameId: string) {
-    const { data, error } = await supabase.from("games").select("countdown_ends_at").eq("id", gameId).single()
-
-    if (error || !data?.countdown_ends_at) {
-      return { timeLeft: null, error }
-    }
-
-    const now = new Date()
-    const endsAt = new Date(data.countdown_ends_at)
-    const timeLeft = Math.max(0, Math.floor((endsAt.getTime() - now.getTime()) / 1000))
-
-    return { timeLeft, error: null }
-  },
-
-  async updateGameStatus(gameId: string, status: string, updates: any = {}) {
-    const { data, error } = await supabase
-      .from("games")
-      .update({ status, ...updates })
-      .eq("id", gameId)
-      .select()
-      .single()
-
-    return { data, error }
-  },
-
-  // Game Participants
-  async joinGame(gameId: string, playerId: string, giftSelections: any[], color: string, positionIndex: number) {
-    let totalGiftValue = giftSelections.reduce((sum, selection) => sum + selection.totalValue, 0)
-    let participantData = null
-    let participantError = null
-
-    // 1. Check if participant already exists
-    const { data: existingParticipant, error: fetchParticipantError } = await supabase
-      .from("game_participants")
-      .select("*")
-      .eq("game_id", gameId)
-      .eq("player_id", playerId)
-      .single()
-
-    if (fetchParticipantError && fetchParticipantError.code !== "PGRST116") {
-      // PGRST116 means "no rows found"
-      console.error("Error checking existing participant:", fetchParticipantError)
-      return { data: null, error: fetchParticipantError }
-    }
-
-    if (existingParticipant) {
-      console.log("Participant already exists, updating gifts and value...")
-      // Participant exists, update their gift_value
-      totalGiftValue += existingParticipant.gift_value // Add new gifts value to existing
-
-      const { data: updatedParticipant, error: updateError } = await supabase
-        .from("game_participants")
-        .update({ gift_value: totalGiftValue })
-        .eq("id", existingParticipant.id)
-        .select()
-        .single()
-
-      participantData = updatedParticipant
-      participantError = updateError
-
-      if (updateError) {
-        console.error("Error updating participant gift value:", updateError)
-        return { data: null, error: updateError }
-      }
-    } else {
-      console.log("Participant does not exist, inserting new participant...")
-      // Participant does not exist, insert new one
-      const { data: newParticipant, error: insertError } = await supabase
-        .from("game_participants")
-        .insert({
-          game_id: gameId,
-          player_id: playerId,
-          balance: 0, // Assuming balance is handled separately or not used for gifts
-          gift_value: totalGiftValue,
-          color,
-          position_index: positionIndex,
-        })
-        .select()
-        .single()
-
-      participantData = newParticipant
-      participantError = insertError
-
-      if (insertError) {
-        console.error("Error inserting new participant:", insertError)
-        return { data: null, error: insertError }
-      }
-    }
-
-    // 2. Add/Update game_participant_gifts
-    if (participantData) {
-      for (const selection of giftSelections) {
-        // Check if this specific gift type already exists for this participant in this game
-        const { data: existingGiftEntry, error: fetchGiftEntryError } = await supabase
-          .from("game_participant_gifts")
-          .select("*")
-          .eq("game_participant_id", participantData.id)
-          .eq("gift_id", selection.giftId)
-          .single()
-
-        if (fetchGiftEntryError && fetchGiftEntryError.code !== "PGRST116") {
-          console.error("Error checking existing gift entry:", fetchGiftEntryError)
-          // Continue to next gift, but log error
-        }
-
-        if (existingGiftEntry) {
-          // Update existing gift entry
-          const newQuantity = existingGiftEntry.quantity + selection.quantity
-          const newTotalValue = existingGiftEntry.total_value + selection.totalValue
-          const { error: updateGiftError } = await supabase
-            .from("game_participant_gifts")
-            .update({ quantity: newQuantity, total_value: newTotalValue })
-            .eq("id", existingGiftEntry.id)
-          if (updateGiftError) {
-            console.error("Error updating game participant gift:", updateGiftError)
-          }
-        } else {
-          // Insert new gift entry
-          const { error: insertGiftError } = await supabase.from("game_participant_gifts").insert({
-            game_participant_id: participantData.id,
-            gift_id: selection.giftId,
-            quantity: selection.quantity,
-            value_per_gift: selection.totalValue / selection.quantity, // Assuming value_per_gift is base_value
-            total_value: selection.totalValue,
-          })
-          if (insertGiftError) {
-            console.error("Error inserting game participant gift:", insertGiftError)
-          }
-        }
-      }
-
-      // 3. Recalculate chances and game totals after any change
-      const { error: rpcError } = await supabase.rpc("recalculate_game_chances", { p_game_id: gameId })
-      if (rpcError) {
-        console.error("Error calling recalculate_game_chances RPC:", rpcError)
-        // This error might not be critical for the join itself, but affects game logic
-      }
-    }
-
-    return { data: participantData, error: participantError }
-  },
-
-  // Gifts
-  async getAllGifts() {
-    const { data, error } = await supabase
-      .from("gifts")
-      .select("*")
-      .eq("is_active", true)
-      .order("rarity", { ascending: true })
-
-    return { data, error }
-  },
-
-  async getPlayerGifts(playerId: string) {
-    const { data, error } = await supabase
-      .from("player_gifts")
-      .select(`
-        *,
-        gifts (*)
-      `)
-      .eq("player_id", playerId)
-      .gt("quantity", 0)
-
-    return { data, error }
-  },
-
-  async updatePlayerGifts(playerId: string, giftId: string, quantityChange: number) {
-    // First, try to get existing record
-    const { data: existing } = await supabase
-      .from("player_gifts")
-      .select("*")
-      .eq("player_id", playerId)
-      .eq("gift_id", giftId)
-      .single()
-
-    if (existing) {
-      // Update existing record
-      const newQuantity = existing.quantity + quantityChange
-      const { data, error } = await supabase
-        .from("player_gifts")
-        .update({ quantity: newQuantity })
-        .eq("id", existing.id)
-        .select()
-        .single()
-
-      return { data, error }
-    } else if (quantityChange > 0) {
-      // Create new record
-      const { data, error } = await supabase
-        .from("player_gifts")
-        .insert({
-          player_id: playerId,
-          gift_id: giftId,
-          quantity: quantityChange,
-          total_value: 0, // Will be calculated by trigger
-        })
-        .select()
-        .single()
-
-      return { data, error }
-    }
-
-    return { data: null, error: null }
-  },
-
-  // Game Logs
-  async addGameLog(gameId: string, playerId: string | null, logType: string, message: string) {
-    const { data, error } = await supabase
-      .from("game_logs")
-      .insert({
-        game_id: gameId,
-        player_id: playerId,
-        log_type: logType,
-        message,
-      })
-      .select()
-      .single()
-
-    return { data, error }
-  },
-
-  async getGameLogs(gameId: string, limit = 20) {
-    const { data, error } = await supabase
-      .from("game_logs")
-      .select(`
-        *,
-        players (username, first_name)
-      `)
-      .eq("game_id", gameId)
-      .order("created_at", { ascending: false })
-      .limit(limit)
-
-    return { data, error }
-  },
-
-  // Match History
-  async getMatchHistory(limit = 50) {
-    const { data, error } = await supabase
-      .from("games")
-      .select(`
-        *,
-        players!games_winner_id_fkey (username, first_name),
-        game_participants (
-          *,
-          players (username, first_name)
-        )
-      `)
-      .eq("status", "completed")
-      .order("completed_at", { ascending: false })
-      .limit(limit)
-
-    return { data, error }
-  },
-
-  // Get game participants with related data
-  async getGameParticipants(gameId: string) {
-    try {
-      const { data, error } = await supabase
-        .from("game_participants")
-        .select(`
-          *,
-          players:player_id (*),
-          game_participant_gifts(
-            *,
-            gifts:gift_id (*)
-          )
-        `)
-        .eq("game_id", gameId)
-        .order("created_at", { ascending: true })
-
-      if (error) {
-        console.error("Error fetching game participants:", error)
-        return { error }
-      }
-
-      return { data }
-    } catch (error) {
-      console.error("Error in getGameParticipants:", error)
-      return { error }
-    }
-  },
-}
-
-export default supabase
+-- Create PvP Wheel Database Schema
+-- This schema supports the wheel game with players, games, and gift system
+
+-- Enable necessary extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Players table to store user information
+CREATE TABLE IF NOT EXISTS players (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    telegram_id BIGINT UNIQUE NOT NULL,
+    username VARCHAR(255) NOT NULL,
+    first_name VARCHAR(255),
+    last_name VARCHAR(255),
+    photo_url TEXT,
+    is_premium BOOLEAN DEFAULT FALSE,
+    language_code VARCHAR(10),
+    total_games_played INTEGER DEFAULT 0,
+    total_games_won INTEGER DEFAULT 0,
+    total_ton_won DECIMAL(10, 6) DEFAULT 0,
+    total_gifts_won INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Games table to store game sessions
+CREATE TABLE IF NOT EXISTS games (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    roll_number INTEGER NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'waiting', -- waiting, spinning, completed, cancelled
+    countdown_ends_at TIMESTAMP WITH TIME ZONE, -- when the countdown should end
+    total_players INTEGER DEFAULT 0,
+    total_pot_balance DECIMAL(10, 6) DEFAULT 0,
+    total_gift_value DECIMAL(10, 6) DEFAULT 0,
+    winner_id UUID REFERENCES players(id),
+    winner_chance DECIMAL(5, 2), -- percentage with 2 decimal places
+    spin_timestamp TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    completed_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Game participants table (junction table)
+CREATE TABLE IF NOT EXISTS game_participants (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    player_id UUID NOT NULL REFERENCES players(id),
+    balance DECIMAL(10, 6) DEFAULT 0,
+    gift_value DECIMAL(10, 6) DEFAULT 0,
+    color VARCHAR(7) NOT NULL, -- hex color code
+    position_index INTEGER NOT NULL,
+    chance_percentage DECIMAL(5, 2),
+    joined_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(game_id, player_id)
+);
+
+-- Gifts table to define available gifts
+CREATE TABLE IF NOT EXISTS gifts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    emoji VARCHAR(10) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    base_value DECIMAL(10, 6) NOT NULL,
+    rarity VARCHAR(20) NOT NULL CHECK (rarity IN ('common', 'rare', 'epic', 'legendary')),
+    is_active BOOLEAN DEFAULT TRUE,
+    is_nft BOOLEAN DEFAULT FALSE,
+    nft_address VARCHAR(255), -- TON NFT collection address
+    nft_item_id VARCHAR(255), -- Specific NFT item ID (optional)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Player gifts inventory
+CREATE TABLE IF NOT EXISTS player_gifts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    gift_id UUID NOT NULL REFERENCES gifts(id),
+    quantity INTEGER NOT NULL DEFAULT 0,
+    total_value DECIMAL(10, 6) NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(player_id, gift_id)
+);
+
+-- Game participant gifts (gifts used in specific games)
+CREATE TABLE IF NOT EXISTS game_participant_gifts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    game_participant_id UUID NOT NULL REFERENCES game_participants(id) ON DELETE CASCADE,
+    gift_id UUID NOT NULL REFERENCES gifts(id),
+    quantity INTEGER NOT NULL DEFAULT 1,
+    value_per_gift DECIMAL(10, 6) NOT NULL,
+    total_value DECIMAL(10, 6) NOT NULL
+);
+
+-- NFT deposits tracking table (Telegram-based)
+CREATE TABLE IF NOT EXISTS nft_deposits (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    telegram_username VARCHAR(255) NOT NULL,
+    message_content TEXT,
+    nft_gifts_description TEXT, -- Description of NFT gifts being deposited
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'rejected', 'processed')),
+    processed_by UUID REFERENCES players(id), -- Admin who processed the request
+    processed_at TIMESTAMP WITH TIME ZONE,
+    notes TEXT, -- Admin notes
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Game logs for tracking game events
+CREATE TABLE IF NOT EXISTS game_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    player_id UUID REFERENCES players(id),
+    log_type VARCHAR(20) NOT NULL CHECK (log_type IN ('join', 'spin', 'winner', 'info')),
+    message TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_players_telegram_id ON players(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_games_roll_number ON games(roll_number);
+CREATE INDEX IF NOT EXISTS idx_games_status ON games(status);
+CREATE INDEX IF NOT EXISTS idx_games_created_at ON games(created_at);
+CREATE INDEX IF NOT EXISTS idx_game_participants_game_id ON game_participants(game_id);
+CREATE INDEX IF NOT EXISTS idx_game_participants_player_id ON game_participants(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_gifts_player_id ON player_gifts(player_id);
+CREATE INDEX IF NOT EXISTS idx_game_logs_game_id ON game_logs(game_id);
+CREATE INDEX IF NOT EXISTS idx_game_logs_created_at ON game_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_nft_deposits_player_id ON nft_deposits(player_id);
+CREATE INDEX IF NOT EXISTS idx_nft_deposits_telegram_username ON nft_deposits(telegram_username);
+CREATE INDEX IF NOT EXISTS idx_nft_deposits_status ON nft_deposits(status);
+CREATE INDEX IF NOT EXISTS idx_nft_deposits_created_at ON nft_deposits(created_at);
+
+-- Insert default gifts
+INSERT INTO gifts (emoji, name, base_value, rarity, is_nft, nft_address) VALUES
+('🎁', 'Gift Box', 0.1, 'common', FALSE, NULL),
+('💎', 'Diamond', 0.5, 'rare', FALSE, NULL),
+('⭐', 'Star', 0.3, 'common', FALSE, NULL),
+('👑', 'Crown', 1.0, 'epic', FALSE, NULL),
+('🏆', 'Trophy', 2.0, 'legendary', FALSE, NULL),
+('💰', 'Money Bag', 0.8, 'epic', FALSE, NULL),
+('🎊', 'Confetti', 0.2, 'common', FALSE, NULL),
+('🚀', 'Rocket', 1.5, 'legendary', FALSE, NULL),
+('🎪', 'Circus', 0.4, 'rare', FALSE, NULL),
+('🌟', 'Golden Star', 0.6, 'rare', FALSE, NULL),
+('💫', 'Shooting Star', 1.2, 'epic', FALSE, NULL),
+('🎯', 'Target', 0.7, 'rare', FALSE, NULL),
+('🎨', 'Art Palette', 0.9, 'epic', FALSE, NULL),
+('🎭', 'Theater Mask', 0.5, 'rare', FALSE, NULL),
+('🎪', 'Carnival', 1.8, 'legendary', FALSE, NULL),
+('🦄', 'Unicorn NFT', 5.0, 'legendary', TRUE, 'EQD...example'),
+('🐉', 'Dragon NFT', 3.5, 'epic', TRUE, 'EQD...example'),
+('🎮', 'Gaming NFT', 1.8, 'rare', TRUE, 'EQD...example')
+ON CONFLICT (emoji) DO NOTHING;
+
+-- Function to update player stats after game completion
+CREATE OR REPLACE FUNCTION update_player_stats()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Update total games played for all participants
+    UPDATE players
+    SET total_games_played = total_games_played + 1,
+        updated_at = NOW()
+    WHERE id IN (
+        SELECT player_id FROM game_participants WHERE game_id = NEW.id
+    );
+
+    -- Update winner stats if there's a winner
+    IF NEW.winner_id IS NOT NULL THEN
+        UPDATE players
+        SET total_games_won = total_games_won + 1,
+            total_ton_won = total_ton_won + NEW.total_gift_value,
+            updated_at = NOW()
+        WHERE id = NEW.winner_id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to update player stats when game is completed
+CREATE TRIGGER update_player_stats_trigger
+    AFTER UPDATE ON games
+    FOR EACH ROW
+    WHEN (OLD.status != 'completed' AND NEW.status = 'completed')
+    EXECUTE FUNCTION update_player_stats();
+
+-- Function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Triggers for updated_at columns
+CREATE TRIGGER update_players_updated_at BEFORE UPDATE ON players
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_player_gifts_updated_at BEFORE UPDATE ON player_gifts
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- New function to recalculate chance percentages and game totals
+CREATE OR REPLACE FUNCTION recalculate_game_chances(p_game_id UUID)
+RETURNS VOID AS $$
+DECLARE
+    total_game_value DECIMAL(10, 6);
+    participant_count INTEGER;
+BEGIN
+    -- Calculate total gift value for the game
+    SELECT SUM(gp.gift_value)
+    INTO total_game_value
+    FROM game_participants gp
+    WHERE gp.game_id = p_game_id;
+
+    -- Count participants
+    SELECT COUNT(*)
+    INTO participant_count
+    FROM game_participants
+    WHERE game_id = p_game_id;
+
+    -- Update chance_percentage for each participant
+    UPDATE game_participants
+    SET chance_percentage = (gift_value / total_game_value) * 100
+    WHERE game_id = p_game_id;
+
+    -- Update total_pot_balance and total_players in games table
+    UPDATE games
+    SET
+        total_pot_balance = total_game_value,
+        total_gift_value = total_game_value, -- Ensure this is consistent
+        total_players = participant_count
+    WHERE id = p_game_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- New function to handle adding gifts to a game (or joining if new)
+CREATE OR REPLACE FUNCTION add_gifts_to_game(
+    p_game_id UUID,
+    p_player_id UUID,
+    p_gift_selections JSONB, -- Array of { gift_id: UUID, quantity: INTEGER, total_value: DECIMAL }
+    p_color VARCHAR(7),
+    p_position_index INTEGER,
+    p_player_name TEXT -- For logging purposes
+)
+RETURNS TABLE(game_participant_id UUID, new_total_gift_value DECIMAL) AS $$
+DECLARE
+    v_participant_id UUID;
+    v_current_gift_value DECIMAL := 0;
+    v_total_new_gifts_value DECIMAL := 0;
+    v_gift_selection JSONB;
+    v_gift_id UUID;
+    v_quantity INTEGER;
+    v_value_per_gift DECIMAL;
+    v_total_value_for_gift DECIMAL;
+    v_log_message TEXT;
+BEGIN
+    -- Calculate total value of new gifts being added
+    FOR v_gift_selection IN SELECT * FROM jsonb_array_elements(p_gift_selections)
+    LOOP
+        v_total_new_gifts_value := v_total_new_gifts_value + (v_gift_selection->>'total_value')::DECIMAL;
+    END LOOP;
+
+    -- Check if participant already exists
+    SELECT id, gift_value INTO v_participant_id, v_current_gift_value
+    FROM game_participants
+    WHERE game_id = p_game_id AND player_id = p_player_id;
+
+    IF v_participant_id IS NOT NULL THEN
+        -- Participant exists, update their gift_value
+        UPDATE game_participants
+        SET gift_value = v_current_gift_value + v_total_new_gifts_value
+        WHERE id = v_participant_id
+        RETURNING id INTO game_participant_id; -- Return the existing participant ID
+        
+        v_log_message := p_player_name || ' added ' || v_total_new_gifts_value::TEXT || ' TON in gifts!';
+    ELSE
+        -- Participant does not exist, insert new one
+        INSERT INTO game_participants (game_id, player_id, balance, gift_value, color, position_index)
+        VALUES (p_game_id, p_player_id, 0, v_total_new_gifts_value, p_color, p_position_index)
+        RETURNING id INTO game_participant_id;
+
+        v_log_message := p_player_name || ' joined with ' || v_total_new_gifts_value::TEXT || ' TON in gifts!';
+    END IF;
+
+    -- Add/Update game_participant_gifts
+    FOR v_gift_selection IN SELECT * FROM jsonb_array_elements(p_gift_selections)
+    LOOP
+        v_gift_id := (v_gift_selection->>'gift_id')::UUID;
+        v_quantity := (v_gift_selection->>'quantity')::INTEGER;
+        v_value_per_gift := (v_gift_selection->>'total_value')::DECIMAL / v_quantity;
+        v_total_value_for_gift := (v_gift_selection->>'total_value')::DECIMAL;
+
+        INSERT INTO game_participant_gifts (game_participant_id, gift_id, quantity, value_per_gift, total_value)
+        VALUES (game_participant_id, v_gift_id, v_quantity, v_value_per_gift, v_total_value_for_gift)
+        ON CONFLICT (game_participant_id, gift_id) DO UPDATE
+        SET
+            quantity = game_participant_gifts.quantity + EXCLUDED.quantity,
+            total_value = game_participant_gifts.total_value + EXCLUDED.total_value;
+
+        -- Deduct from player_gifts inventory
+        INSERT INTO player_gifts (player_id, gift_id, quantity, total_value)
+        VALUES (p_player_id, v_gift_id, -v_quantity, -v_total_value_for_gift) -- Negative quantity to deduct
+        ON CONFLICT (player_id, gift_id) DO UPDATE
+        SET
+            quantity = player_gifts.quantity + EXCLUDED.quantity,
+            total_value = player_gifts.total_value + EXCLUDED.total_value;
+    END LOOP;
+
+    -- Recalculate chances and game totals
+    PERFORM recalculate_game_chances(p_game_id);
+
+    -- Add game log entry
+    INSERT INTO game_logs (game_id, player_id, log_type, message)
+    VALUES (p_game_id, p_player_id, 'join', v_log_message);
+
+    -- Return the new total gift value for the participant
+    SELECT gift_value INTO new_total_gift_value FROM game_participants WHERE id = game_participant_id;
+
+    RETURN NEXT;
+END;
+$$ LANGUAGE plpgsql;
+
+-- RLS (Row Level Security) policies can be added here if needed
+-- ALTER TABLE players ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE games ENABLE ROW LEVEL SECURITY;
+-- etc.
