@@ -911,14 +911,6 @@ export default function WheelGame() {
       webApp?.HapticFeedback?.notificationOccurred("error")
       alert("Maximum 15 players allowed!")
       return
-      alert("Unable to get player name!")
-      return
-    }
-
-    if (activePlayers.length >= 15) {
-      webApp?.HapticFeedback?.notificationOccurred("error")
-      alert("Maximum 15 players allowed!")
-      return
     }
 
     // Haptic feedback for successful join/add
