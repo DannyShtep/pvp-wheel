@@ -134,7 +134,7 @@ INSERT INTO gifts (emoji, name, base_value, rarity, is_nft, nft_address) VALUES
 ('👑', 'Crown', 1.0, 'epic', FALSE, NULL),
 ('🏆', 'Trophy', 2.0, 'legendary', FALSE, NULL),
 ('💰', 'Money Bag', 0.8, 'epic', FALSE, NULL),
-('🎊', 'Confetti', 0.2, 'common', FALSE, NULL),
+('����', 'Confetti', 0.2, 'common', FALSE, NULL),
 ('🚀', 'Rocket', 1.5, 'legendary', FALSE, NULL),
 ('🎪', 'Circus', 0.4, 'rare', FALSE, NULL),
 ('🌟', 'Golden Star', 0.6, 'rare', FALSE, NULL),
@@ -153,22 +153,22 @@ CREATE OR REPLACE FUNCTION update_player_stats()
 RETURNS TRIGGER AS $$
 BEGIN
     -- Update total games played for all participants
-    UPDATE players 
+    UPDATE players
     SET total_games_played = total_games_played + 1,
         updated_at = NOW()
     WHERE id IN (
         SELECT player_id FROM game_participants WHERE game_id = NEW.id
     );
-    
+
     -- Update winner stats if there's a winner
     IF NEW.winner_id IS NOT NULL THEN
-        UPDATE players 
+        UPDATE players
         SET total_games_won = total_games_won + 1,
             total_ton_won = total_ton_won + NEW.total_gift_value,
             updated_at = NOW()
         WHERE id = NEW.winner_id;
     END IF;
-    
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -195,6 +195,40 @@ CREATE TRIGGER update_players_updated_at BEFORE UPDATE ON players
 
 CREATE TRIGGER update_player_gifts_updated_at BEFORE UPDATE ON player_gifts
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- New function to recalculate chance percentages and game totals
+CREATE OR REPLACE FUNCTION recalculate_game_chances(p_game_id UUID)
+RETURNS VOID AS $$
+DECLARE
+    total_game_value DECIMAL(10, 6);
+    participant_count INTEGER;
+BEGIN
+    -- Calculate total gift value for the game
+    SELECT SUM(gp.gift_value)
+    INTO total_game_value
+    FROM game_participants gp
+    WHERE gp.game_id = p_game_id;
+
+    -- Count participants
+    SELECT COUNT(*)
+    INTO participant_count
+    FROM game_participants
+    WHERE game_id = p_game_id;
+
+    -- Update chance_percentage for each participant
+    UPDATE game_participants
+    SET chance_percentage = (gift_value / total_game_value) * 100
+    WHERE game_id = p_game_id;
+
+    -- Update total_pot_balance and total_players in games table
+    UPDATE games
+    SET
+        total_pot_balance = total_game_value,
+        total_gift_value = total_game_value, -- Ensure this is consistent
+        total_players = participant_count
+    WHERE id = p_game_id;
+END;
+$$ LANGUAGE plpgsql;
 
 -- RLS (Row Level Security) policies can be added here if needed
 -- ALTER TABLE players ENABLE ROW LEVEL SECURITY;
