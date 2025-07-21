@@ -1,22 +1,22 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from "@supabase/supabase-js"
 
 // Supabase configuration
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('❌ Missing Supabase environment variables')
-  console.error('NEXT_PUBLIC_SUPABASE_URL:', supabaseUrl ? 'Set' : 'Missing')
-  console.error('NEXT_PUBLIC_SUPABASE_ANON_KEY:', supabaseAnonKey ? 'Set' : 'Missing')
-  throw new Error('Missing Supabase environment variables')
+  console.error("❌ Missing Supabase environment variables")
+  console.error("NEXT_PUBLIC_SUPABASE_URL:", supabaseUrl ? "Set" : "Missing")
+  console.error("NEXT_PUBLIC_SUPABASE_ANON_KEY:", supabaseAnonKey ? "Set" : "Missing")
+  throw new Error("Missing Supabase environment variables")
 }
 
 // Create Supabase client
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: false,
-    persistSession: false
-  }
+    persistSession: false,
+  },
 })
 
 // Initialize Supabase connection with retry logic
@@ -27,25 +27,22 @@ export const initializeSupabase = async () => {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       console.log(`🔄 Attempting to connect to Supabase (attempt ${attempt}/${MAX_RETRIES})...`)
-      
+
       // Test the connection with a simple query
-      const { data, error } = await supabase
-        .from('games')
-        .select('id')
-        .limit(1)
+      const { data, error } = await supabase.from("games").select("id").limit(1)
 
       if (error) throw error
-      
-      console.log('✅ Supabase client initialized for PvP Wheel')
+
+      console.log("✅ Supabase client initialized for PvP Wheel")
       return true
     } catch (err) {
       console.error(`❌ Failed to connect (attempt ${attempt}/${MAX_RETRIES}):`, err)
-      
+
       if (attempt < MAX_RETRIES) {
-        console.log(`⏳ Retrying in ${RETRY_DELAY/1000} seconds...`)
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
+        console.log(`⏳ Retrying in ${RETRY_DELAY / 1000} seconds...`)
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY))
       } else {
-        console.error('❌ All connection attempts failed')
+        console.error("❌ All connection attempts failed")
         return false
       }
     }
@@ -111,7 +108,7 @@ export interface Database {
         Row: {
           id: string
           roll_number: number
-          status: 'waiting' | 'spinning' | 'completed' | 'cancelled'
+          status: "waiting" | "spinning" | "completed" | "cancelled"
           total_players: number
           total_pot_balance: number
           total_gift_value: number
@@ -124,7 +121,7 @@ export interface Database {
         Insert: {
           id?: string
           roll_number: number
-          status?: 'waiting' | 'spinning' | 'completed' | 'cancelled'
+          status?: "waiting" | "spinning" | "completed" | "cancelled"
           total_players?: number
           total_pot_balance?: number
           total_gift_value?: number
@@ -137,7 +134,7 @@ export interface Database {
         Update: {
           id?: string
           roll_number?: number
-          status?: 'waiting' | 'spinning' | 'completed' | 'cancelled'
+          status?: "waiting" | "spinning" | "completed" | "cancelled"
           total_players?: number
           total_pot_balance?: number
           total_gift_value?: number
@@ -189,7 +186,7 @@ export interface Database {
           emoji: string
           name: string
           base_value: number
-          rarity: 'common' | 'rare' | 'epic' | 'legendary'
+          rarity: "common" | "rare" | "epic" | "legendary"
           is_active: boolean
           created_at: string
         }
@@ -198,7 +195,7 @@ export interface Database {
           emoji: string
           name: string
           base_value: number
-          rarity: 'common' | 'rare' | 'epic' | 'legendary'
+          rarity: "common" | "rare" | "epic" | "legendary"
           is_active?: boolean
           created_at?: string
         }
@@ -207,7 +204,7 @@ export interface Database {
           emoji?: string
           name?: string
           base_value?: number
-          rarity?: 'common' | 'rare' | 'epic' | 'legendary'
+          rarity?: "common" | "rare" | "epic" | "legendary"
           is_active?: boolean
           created_at?: string
         }
@@ -269,7 +266,7 @@ export interface Database {
           id: string
           game_id: string
           player_id: string | null
-          log_type: 'join' | 'spin' | 'winner' | 'info'
+          log_type: "join" | "spin" | "winner" | "info"
           message: string
           created_at: string
         }
@@ -277,7 +274,7 @@ export interface Database {
           id?: string
           game_id: string
           player_id?: string | null
-          log_type: 'join' | 'spin' | 'winner' | 'info'
+          log_type: "join" | "spin" | "winner" | "info"
           message: string
           created_at?: string
         }
@@ -285,7 +282,7 @@ export interface Database {
           id?: string
           game_id?: string
           player_id?: string | null
-          log_type?: 'join' | 'spin' | 'winner' | 'info'
+          log_type?: "join" | "spin" | "winner" | "info"
           message?: string
           created_at?: string
         }
@@ -299,18 +296,18 @@ export const dbHelpers = {
   // Test database connection
   async testConnection() {
     try {
-      console.log('Testing database connection...')
-      const { data, error } = await supabase.from('players').select('count').limit(1)
-      
+      console.log("Testing database connection...")
+      const { data, error } = await supabase.from("players").select("count").limit(1)
+
       if (error) {
-        console.error('Database connection test failed:', error)
+        console.error("Database connection test failed:", error)
         return { success: false, error }
       }
-      
-      console.log('Database connection test successful')
+
+      console.log("Database connection test successful")
       return { success: true, data }
     } catch (err) {
-      console.error('Database connection test error:', err)
+      console.error("Database connection test error:", err)
       return { success: false, error: err }
     }
   },
@@ -318,21 +315,21 @@ export const dbHelpers = {
   // Players
   async getOrCreatePlayer(telegramUser: any) {
     try {
-      console.log('Searching for existing player with telegram_id:', telegramUser.id)
-      
+      console.log("Searching for existing player with telegram_id:", telegramUser.id)
+
       const { data: existingPlayer, error: fetchError } = await supabase
-        .from('players')
-        .select('*')
-        .eq('telegram_id', telegramUser.id)
+        .from("players")
+        .select("*")
+        .eq("telegram_id", telegramUser.id)
         .single()
 
       if (fetchError) {
-        console.log('Fetch error (expected if player not found):', fetchError.message)
-        
+        console.log("Fetch error (expected if player not found):", fetchError.message)
+
         // If player not found, create new one
-        if (fetchError.code === 'PGRST116') {
-          console.log('Player not found, creating new player...')
-          
+        if (fetchError.code === "PGRST116") {
+          console.log("Player not found, creating new player...")
+
           const newPlayerData = {
             telegram_id: telegramUser.id,
             username: telegramUser.username || telegramUser.first_name || `User${telegramUser.id}`,
@@ -340,34 +337,34 @@ export const dbHelpers = {
             last_name: telegramUser.last_name || null,
             photo_url: telegramUser.photo_url || null,
             is_premium: telegramUser.is_premium || false,
-            language_code: telegramUser.language_code || null
+            language_code: telegramUser.language_code || null,
           }
-          
-          console.log('Creating player with data:', newPlayerData)
-          
+
+          console.log("Creating player with data:", newPlayerData)
+
           const { data: newPlayer, error: createError } = await supabase
-            .from('players')
+            .from("players")
             .insert(newPlayerData)
             .select()
             .single()
 
           if (createError) {
-            console.error('Error creating new player:', createError)
+            console.error("Error creating new player:", createError)
             return { data: null, error: createError }
           }
-          
-          console.log('New player created successfully:', newPlayer)
+
+          console.log("New player created successfully:", newPlayer)
           return { data: newPlayer, error: null }
         }
-        
+
         // Other errors
         return { data: null, error: fetchError }
       }
 
-      console.log('Found existing player:', existingPlayer)
+      console.log("Found existing player:", existingPlayer)
       return { data: existingPlayer, error: null }
     } catch (err) {
-      console.error('Unexpected error in getOrCreatePlayer:', err)
+      console.error("Unexpected error in getOrCreatePlayer:", err)
       return { data: null, error: err }
     }
   },
@@ -375,7 +372,7 @@ export const dbHelpers = {
   // Games
   async getCurrentGame() {
     const { data, error } = await supabase
-      .from('games')
+      .from("games")
       .select(`
         *,
         game_participants (
@@ -391,8 +388,8 @@ export const dbHelpers = {
           )
         )
       `)
-      .eq('status', 'waiting')
-      .order('created_at', { ascending: false })
+      .eq("status", "waiting")
+      .order("created_at", { ascending: false })
       .limit(1)
 
     return { data: data?.[0] || null, error }
@@ -401,10 +398,10 @@ export const dbHelpers = {
   async createGame(rollNumber: number) {
     // Set countdown to end 60 seconds from now when first participant joins
     const { data, error } = await supabase
-      .from('games')
+      .from("games")
       .insert({
         roll_number: rollNumber,
-        status: 'waiting'
+        status: "waiting",
       })
       .select()
       .single()
@@ -412,13 +409,13 @@ export const dbHelpers = {
     return { data, error }
   },
 
-  async startGameCountdown(gameId: string, durationSeconds: number = 60) {
+  async startGameCountdown(gameId: string, durationSeconds = 60) {
     const countdownEndsAt = new Date(Date.now() + durationSeconds * 1000).toISOString()
-    
+
     const { data, error } = await supabase
-      .from('games')
+      .from("games")
       .update({ countdown_ends_at: countdownEndsAt })
-      .eq('id', gameId)
+      .eq("id", gameId)
       .select()
       .single()
 
@@ -426,11 +423,7 @@ export const dbHelpers = {
   },
 
   async getGameCountdown(gameId: string) {
-    const { data, error } = await supabase
-      .from('games')
-      .select('countdown_ends_at')
-      .eq('id', gameId)
-      .single()
+    const { data, error } = await supabase.from("games").select("countdown_ends_at").eq("id", gameId).single()
 
     if (error || !data?.countdown_ends_at) {
       return { timeLeft: null, error }
@@ -445,9 +438,9 @@ export const dbHelpers = {
 
   async updateGameStatus(gameId: string, status: string, updates: any = {}) {
     const { data, error } = await supabase
-      .from('games')
+      .from("games")
       .update({ status, ...updates })
-      .eq('id', gameId)
+      .eq("id", gameId)
       .select()
       .single()
 
@@ -456,44 +449,141 @@ export const dbHelpers = {
 
   // Game Participants
   async joinGame(gameId: string, playerId: string, giftSelections: any[], color: string, positionIndex: number) {
-    const totalGiftValue = giftSelections.reduce((sum, selection) => sum + selection.totalValue, 0)
-    
-    const { data, error } = await supabase
-      .from('game_participants')
-      .insert({
-        game_id: gameId,
-        player_id: playerId,
-        balance: 0,
-        gift_value: totalGiftValue,
-        color,
-        position_index: positionIndex
-      })
-      .select()
+    let totalGiftValue = giftSelections.reduce((sum, selection) => sum + selection.totalValue, 0)
+    let participantData = null
+    let participantError = null
+
+    // 1. Check if participant already exists
+    const { data: existingParticipant, error: fetchParticipantError } = await supabase
+      .from("game_participants")
+      .select("*")
+      .eq("game_id", gameId)
+      .eq("player_id", playerId)
       .single()
 
-    return { data, error }
+    if (fetchParticipantError && fetchParticipantError.code !== "PGRST116") {
+      // PGRST116 means "no rows found"
+      console.error("Error checking existing participant:", fetchParticipantError)
+      return { data: null, error: fetchParticipantError }
+    }
+
+    if (existingParticipant) {
+      console.log("Participant already exists, updating gifts and value...")
+      // Participant exists, update their gift_value
+      totalGiftValue += existingParticipant.gift_value // Add new gifts value to existing
+
+      const { data: updatedParticipant, error: updateError } = await supabase
+        .from("game_participants")
+        .update({ gift_value: totalGiftValue })
+        .eq("id", existingParticipant.id)
+        .select()
+        .single()
+
+      participantData = updatedParticipant
+      participantError = updateError
+
+      if (updateError) {
+        console.error("Error updating participant gift value:", updateError)
+        return { data: null, error: updateError }
+      }
+    } else {
+      console.log("Participant does not exist, inserting new participant...")
+      // Participant does not exist, insert new one
+      const { data: newParticipant, error: insertError } = await supabase
+        .from("game_participants")
+        .insert({
+          game_id: gameId,
+          player_id: playerId,
+          balance: 0, // Assuming balance is handled separately or not used for gifts
+          gift_value: totalGiftValue,
+          color,
+          position_index: positionIndex,
+        })
+        .select()
+        .single()
+
+      participantData = newParticipant
+      participantError = insertError
+
+      if (insertError) {
+        console.error("Error inserting new participant:", insertError)
+        return { data: null, error: insertError }
+      }
+    }
+
+    // 2. Add/Update game_participant_gifts
+    if (participantData) {
+      for (const selection of giftSelections) {
+        // Check if this specific gift type already exists for this participant in this game
+        const { data: existingGiftEntry, error: fetchGiftEntryError } = await supabase
+          .from("game_participant_gifts")
+          .select("*")
+          .eq("game_participant_id", participantData.id)
+          .eq("gift_id", selection.giftId)
+          .single()
+
+        if (fetchGiftEntryError && fetchGiftEntryError.code !== "PGRST116") {
+          console.error("Error checking existing gift entry:", fetchGiftEntryError)
+          // Continue to next gift, but log error
+        }
+
+        if (existingGiftEntry) {
+          // Update existing gift entry
+          const newQuantity = existingGiftEntry.quantity + selection.quantity
+          const newTotalValue = existingGiftEntry.total_value + selection.totalValue
+          const { error: updateGiftError } = await supabase
+            .from("game_participant_gifts")
+            .update({ quantity: newQuantity, total_value: newTotalValue })
+            .eq("id", existingGiftEntry.id)
+          if (updateGiftError) {
+            console.error("Error updating game participant gift:", updateGiftError)
+          }
+        } else {
+          // Insert new gift entry
+          const { error: insertGiftError } = await supabase.from("game_participant_gifts").insert({
+            game_participant_id: participantData.id,
+            gift_id: selection.giftId,
+            quantity: selection.quantity,
+            value_per_gift: selection.totalValue / selection.quantity, // Assuming value_per_gift is base_value
+            total_value: selection.totalValue,
+          })
+          if (insertGiftError) {
+            console.error("Error inserting game participant gift:", insertGiftError)
+          }
+        }
+      }
+
+      // 3. Recalculate chances and game totals after any change
+      const { error: rpcError } = await supabase.rpc("recalculate_game_chances", { p_game_id: gameId })
+      if (rpcError) {
+        console.error("Error calling recalculate_game_chances RPC:", rpcError)
+        // This error might not be critical for the join itself, but affects game logic
+      }
+    }
+
+    return { data: participantData, error: participantError }
   },
 
   // Gifts
   async getAllGifts() {
     const { data, error } = await supabase
-      .from('gifts')
-      .select('*')
-      .eq('is_active', true)
-      .order('rarity', { ascending: true })
+      .from("gifts")
+      .select("*")
+      .eq("is_active", true)
+      .order("rarity", { ascending: true })
 
     return { data, error }
   },
 
   async getPlayerGifts(playerId: string) {
     const { data, error } = await supabase
-      .from('player_gifts')
+      .from("player_gifts")
       .select(`
         *,
         gifts (*)
       `)
-      .eq('player_id', playerId)
-      .gt('quantity', 0)
+      .eq("player_id", playerId)
+      .gt("quantity", 0)
 
     return { data, error }
   },
@@ -501,19 +591,19 @@ export const dbHelpers = {
   async updatePlayerGifts(playerId: string, giftId: string, quantityChange: number) {
     // First, try to get existing record
     const { data: existing } = await supabase
-      .from('player_gifts')
-      .select('*')
-      .eq('player_id', playerId)
-      .eq('gift_id', giftId)
+      .from("player_gifts")
+      .select("*")
+      .eq("player_id", playerId)
+      .eq("gift_id", giftId)
       .single()
 
     if (existing) {
       // Update existing record
       const newQuantity = existing.quantity + quantityChange
       const { data, error } = await supabase
-        .from('player_gifts')
+        .from("player_gifts")
         .update({ quantity: newQuantity })
-        .eq('id', existing.id)
+        .eq("id", existing.id)
         .select()
         .single()
 
@@ -521,12 +611,12 @@ export const dbHelpers = {
     } else if (quantityChange > 0) {
       // Create new record
       const { data, error } = await supabase
-        .from('player_gifts')
+        .from("player_gifts")
         .insert({
           player_id: playerId,
           gift_id: giftId,
           quantity: quantityChange,
-          total_value: 0 // Will be calculated by trigger
+          total_value: 0, // Will be calculated by trigger
         })
         .select()
         .single()
@@ -540,12 +630,12 @@ export const dbHelpers = {
   // Game Logs
   async addGameLog(gameId: string, playerId: string | null, logType: string, message: string) {
     const { data, error } = await supabase
-      .from('game_logs')
+      .from("game_logs")
       .insert({
         game_id: gameId,
         player_id: playerId,
         log_type: logType,
-        message
+        message,
       })
       .select()
       .single()
@@ -553,24 +643,24 @@ export const dbHelpers = {
     return { data, error }
   },
 
-  async getGameLogs(gameId: string, limit: number = 20) {
+  async getGameLogs(gameId: string, limit = 20) {
     const { data, error } = await supabase
-      .from('game_logs')
+      .from("game_logs")
       .select(`
         *,
         players (username, first_name)
       `)
-      .eq('game_id', gameId)
-      .order('created_at', { ascending: false })
+      .eq("game_id", gameId)
+      .order("created_at", { ascending: false })
       .limit(limit)
 
     return { data, error }
   },
 
   // Match History
-  async getMatchHistory(limit: number = 50) {
+  async getMatchHistory(limit = 50) {
     const { data, error } = await supabase
-      .from('games')
+      .from("games")
       .select(`
         *,
         players!games_winner_id_fkey (username, first_name),
@@ -579,8 +669,8 @@ export const dbHelpers = {
           players (username, first_name)
         )
       `)
-      .eq('status', 'completed')
-      .order('completed_at', { ascending: false })
+      .eq("status", "completed")
+      .order("completed_at", { ascending: false })
       .limit(limit)
 
     return { data, error }
@@ -590,7 +680,7 @@ export const dbHelpers = {
   async getGameParticipants(gameId: string) {
     try {
       const { data, error } = await supabase
-        .from('game_participants')
+        .from("game_participants")
         .select(`
           *,
           players:player_id (*),
@@ -599,17 +689,17 @@ export const dbHelpers = {
             gifts:gift_id (*)
           )
         `)
-        .eq('game_id', gameId)
-        .order('created_at', { ascending: true })
+        .eq("game_id", gameId)
+        .order("created_at", { ascending: true })
 
       if (error) {
-        console.error('Error fetching game participants:', error)
+        console.error("Error fetching game participants:", error)
         return { error }
       }
 
       return { data }
     } catch (error) {
-      console.error('Error in getGameParticipants:', error)
+      console.error("Error in getGameParticipants:", error)
       return { error }
     }
   },
