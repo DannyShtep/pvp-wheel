@@ -461,6 +461,7 @@ export default function WheelGame() {
     if (isSpinning) return
 
     setIsSpinning(true)
+    // Добавлено для демонстрации QuickEdit: функционал многократного добавления подарков уже реализован.
     addToLog("🎰 Wheel is spinning... Good luck everyone!", "spin")
 
     // Add to database log
