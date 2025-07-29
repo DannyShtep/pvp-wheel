@@ -12,7 +12,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient<Database>(supabaseUrl!, supabaseAnonKey!)
 
 export const dbHelpers = {
-  // Initialize or get player by Telegram user ID
+  // Initialize or get player by Telegram user ID with starter gifts
   initializePlayer: async (telegramUser: {
     id: number
     username?: string
@@ -20,27 +20,105 @@ export const dbHelpers = {
     last_name?: string
     photo_url?: string
   }) => {
-    const { data, error } = await supabase
+    // First, try to get existing player
+    const { data: existingPlayer, error: fetchError } = await supabase
       .from("players")
-      .upsert(
-        {
-          telegram_user_id: telegramUser.id,
-          username: telegramUser.username,
-          first_name: telegramUser.first_name,
-          last_name: telegramUser.last_name,
-          photo_url: telegramUser.photo_url,
-          last_active: new Date().toISOString(),
-        },
-        { onConflict: "telegram_user_id" },
-      )
+      .select("*")
+      .eq("telegram_user_id", telegramUser.id)
+      .single()
+
+    if (fetchError && fetchError.code !== "PGRST116") {
+      console.error("Error fetching existing player:", fetchError)
+      throw fetchError
+    }
+
+    if (existingPlayer) {
+      // Update last active time for existing player
+      const { data: updatedPlayer, error: updateError } = await supabase
+        .from("players")
+        .update({ last_active: new Date().toISOString() })
+        .eq("id", existingPlayer.id)
+        .select()
+        .single()
+
+      if (updateError) {
+        console.error("Error updating player last active:", updateError)
+        throw updateError
+      }
+
+      return updatedPlayer
+    }
+
+    // Create new player
+    const { data: newPlayer, error: createError } = await supabase
+      .from("players")
+      .insert({
+        telegram_user_id: telegramUser.id,
+        username: telegramUser.username,
+        first_name: telegramUser.first_name,
+        last_name: telegramUser.last_name,
+        photo_url: telegramUser.photo_url,
+        last_active: new Date().toISOString(),
+      })
       .select()
       .single()
 
-    if (error) {
-      console.error("Error initializing player:", error)
-      throw error
+    if (createError) {
+      console.error("Error creating new player:", createError)
+      throw createError
     }
-    return data
+
+    // Give starter gifts to new player (10 random gifts)
+    await dbHelpers.giveStarterGifts(newPlayer.id)
+
+    return newPlayer
+  },
+
+  // Give starter gifts to new players
+  giveStarterGifts: async (playerId: string) => {
+    try {
+      // Get all available gifts
+      const { data: allGifts, error: giftsError } = await supabase.from("gifts").select("*")
+
+      if (giftsError) {
+        console.error("Error fetching gifts for starter pack:", giftsError)
+        return
+      }
+
+      if (!allGifts || allGifts.length === 0) {
+        console.log("No gifts available for starter pack")
+        return
+      }
+
+      // Give 10 random gifts (2-3 of each type)
+      const starterGifts = [
+        { giftId: allGifts[0]?.id, quantity: 3 }, // Common Gift x3
+        { giftId: allGifts[1]?.id, quantity: 3 }, // Rare Gem x3
+        { giftId: allGifts[2]?.id, quantity: 2 }, // Epic Star x2
+        { giftId: allGifts[3]?.id, quantity: 2 }, // Legendary Crown x2
+      ].filter((gift) => gift.giftId) // Filter out undefined gifts
+
+      for (const gift of starterGifts) {
+        const { error: giftError } = await supabase.from("player_gifts").upsert(
+          {
+            player_id: playerId,
+            gift_id: gift.giftId,
+            quantity: gift.quantity,
+          },
+          {
+            onConflict: "player_id,gift_id",
+          },
+        )
+
+        if (giftError) {
+          console.error("Error giving starter gift:", giftError)
+        }
+      }
+
+      console.log(`✅ Gave starter gifts to player ${playerId}`)
+    } catch (error) {
+      console.error("Error in giveStarterGifts:", error)
+    }
   },
 
   // Player operations
@@ -166,6 +244,45 @@ export const dbHelpers = {
     return data
   },
 
+  // Start countdown when 2+ players join
+  startGameCountdown: async (gameId: string, duration = 60) => {
+    const countdownEndsAt = new Date(Date.now() + duration * 1000)
+
+    const { data, error } = await supabase
+      .from("games")
+      .update({ countdown_ends_at: countdownEndsAt.toISOString() })
+      .eq("id", gameId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("Error starting game countdown:", error)
+      throw error
+    }
+
+    return data
+  },
+
+  // Get remaining countdown time
+  getGameCountdown: async (gameId: string) => {
+    const { data, error } = await supabase.from("games").select("countdown_ends_at").eq("id", gameId).single()
+
+    if (error) {
+      console.error("Error getting game countdown:", error)
+      return null
+    }
+
+    if (!data.countdown_ends_at) {
+      return null
+    }
+
+    const now = new Date()
+    const endsAt = new Date(data.countdown_ends_at)
+    const remainingSeconds = Math.max(0, Math.floor((endsAt.getTime() - now.getTime()) / 1000))
+
+    return remainingSeconds
+  },
+
   async completeGame(gameId: string, winnerPlayerId: string, winnerChance: number, totalPot: number) {
     // Fetch current participants for snapshot
     const { data: participants, error: participantsError } = await supabase
@@ -199,6 +316,7 @@ export const dbHelpers = {
         status: "completed",
         winner_player_id: winnerPlayerId,
         completed_at: new Date().toISOString(),
+        countdown_ends_at: null, // Clear countdown
       })
       .eq("id", gameId)
       .select("roll_number")
@@ -325,19 +443,6 @@ export const dbHelpers = {
       throw error
     }
     return data
-  },
-
-  // Start game countdown
-  startGameCountdown: async (gameId: string, duration: number) => {
-    // This function might be more complex if you want to store countdown state in DB
-    // For now, it's a placeholder for client-side countdown management
-    console.log(`Starting countdown for game ${gameId} for ${duration} seconds.`)
-  },
-
-  // Get game countdown (if stored in DB)
-  getGameCountdown: async (gameId: string) => {
-    // This would fetch countdown from DB if it were stored there
-    return null // For now, client-side manages countdown
   },
 
   // Realtime subscriptions
