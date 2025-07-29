@@ -9,6 +9,10 @@ CREATE TABLE IF NOT EXISTS public.players (
     first_name text,
     last_name text,
     photo_url text,
+    last_active timestamp with time zone DEFAULT now(),
+    total_games_played integer DEFAULT 0,
+    total_games_won integer DEFAULT 0,
+    total_ton_won numeric DEFAULT 0,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -19,10 +23,11 @@ CREATE TABLE IF NOT EXISTS public.games (
     status text DEFAULT 'waiting'::text NOT NULL,
     total_pot_balance numeric DEFAULT 0 NOT NULL,
     total_players integer DEFAULT 0 NOT NULL,
-    winner_player_id uuid,
+    winner_player_id uuid REFERENCES public.players(id),
     winner_chance numeric,
+    countdown_ends_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    ended_at timestamp with time zone
+    completed_at timestamp with time zone
 );
 
 -- Table: game_participants
@@ -80,6 +85,19 @@ CREATE TABLE IF NOT EXISTS public.game_logs (
     log_type text NOT NULL,
     message text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+-- Table: match_history
+CREATE TABLE IF NOT EXISTS public.match_history (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    game_id uuid NOT NULL REFERENCES public.games(id) ON DELETE CASCADE,
+    roll_number bigint NOT NULL,
+    winner_player_id uuid NOT NULL REFERENCES public.players(id),
+    winner_name text NOT NULL,
+    winner_chance numeric NOT NULL,
+    total_pot numeric NOT NULL,
+    players_snapshot jsonb NOT NULL,
+    timestamp timestamp with time zone DEFAULT now() NOT NULL
 );
 
 -- Function to recalculate chances for all participants in a game
@@ -144,6 +162,7 @@ DECLARE
     v_quantity integer;
     v_total_value numeric;
     v_gift_emoji text;
+    v_participant_count integer;
 BEGIN
     -- Check if the player is already a participant in this game
     SELECT id, gift_value, gifts_array
@@ -201,15 +220,37 @@ BEGIN
     -- Recalculate chances for all participants in the game
     PERFORM public.recalculate_game_chances(p_game_id);
 
+    -- Check if we need to start countdown (2+ players)
+    SELECT COUNT(*) INTO v_participant_count
+    FROM public.game_participants
+    WHERE game_id = p_game_id;
+
+    IF v_participant_count >= 2 THEN
+        -- Start countdown if not already started
+        UPDATE public.games
+        SET countdown_ends_at = COALESCE(countdown_ends_at, now() + interval '60 seconds')
+        WHERE id = p_game_id AND countdown_ends_at IS NULL;
+    END IF;
+
     -- Add a log entry for the gift addition
     INSERT INTO public.game_logs (game_id, player_id, log_type, message)
-    VALUES (p_game_id, p_player_id, 'join', p_player_name || ' added gifts worth ' || v_current_gift_value::text || ' TON!');
+    VALUES (p_game_id, p_player_id, 'join', p_player_name || ' добавил подарки на сумму ' || v_current_gift_value::text || ' TON!');
 END;
 $$;
 
 -- Initial data for gifts (if not already present)
 INSERT INTO public.gifts (emoji, name, base_value, rarity, is_nft) VALUES
-('🎁', 'Common Gift', 0.01, 'common', false) ON CONFLICT (emoji) DO NOTHING,
-('💎', 'Rare Gem', 0.05, 'rare', false) ON CONFLICT (emoji) DO NOTHING,
-('⭐', 'Epic Star', 0.1, 'epic', false) ON CONFLICT (emoji) DO NOTHING,
-('👑', 'Legendary Crown', 0.5, 'legendary', false) ON CONFLICT (emoji) DO NOTHING;
+('🎁', 'Обычный Подарок', 0.01, 'common', false) ON CONFLICT (emoji) DO NOTHING,
+('💎', 'Редкий Алмаз', 0.05, 'rare', false) ON CONFLICT (emoji) DO NOTHING,
+('⭐', 'Эпическая Звезда', 0.1, 'epic', false) ON CONFLICT (emoji) DO NOTHING,
+('👑', 'Легендарная Корона', 0.5, 'legendary', false) ON CONFLICT (emoji) DO NOTHING;
+
+-- Add indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_players_telegram_user_id ON public.players(telegram_user_id);
+CREATE INDEX IF NOT EXISTS idx_games_status ON public.games(status);
+CREATE INDEX IF NOT EXISTS idx_games_roll_number ON public.games(roll_number);
+CREATE INDEX IF NOT EXISTS idx_game_participants_game_id ON public.game_participants(game_id);
+CREATE INDEX IF NOT EXISTS idx_game_participants_player_id ON public.game_participants(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_gifts_player_id ON public.player_gifts(player_id);
+CREATE INDEX IF NOT EXISTS idx_game_logs_game_id ON public.game_logs(game_id);
+CREATE INDEX IF NOT EXISTS idx_match_history_timestamp ON public.match_history(timestamp DESC);
