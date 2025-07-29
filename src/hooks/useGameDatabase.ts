@@ -137,7 +137,7 @@ export function useGameDatabase() {
     setLoading(true)
     try {
       const game = await dbHelpers.getCurrentGame(rollNumber)
-      setCurrentGameId(game.id)
+      setCurrentGameId(game?.id || null)
       return game
     } catch (err: any) {
       console.error("Error getting current game:", err)
@@ -155,17 +155,45 @@ export function useGameDatabase() {
       try {
         const { data, error } = await dbHelpers.supabase
           .from("game_participants")
-          .select("*, players(*), game_participant_gifts(gifts(emoji))")
+          .select(`
+            *,
+            players(*),
+            game_participant_gifts(
+              quantity,
+              gifts(
+                emoji,
+                name,
+                base_value
+              )
+            )
+          `)
           .eq("game_id", gameId)
           .order("position", { ascending: true })
 
         if (error) throw error
 
-        const mappedPlayers: Player[] = data.map((p) => {
-          const giftEmojis = p.game_participant_gifts.map((gpg) => gpg.gifts?.emoji).filter(Boolean) as string[]
-          return mapDbPlayerToFrontendPlayer(p.players!, p.color, p.gift_value, giftEmojis)
+        const mappedPlayers: Player[] = data.map((participant) => {
+          // Build gifts array from game_participant_gifts
+          const gifts: string[] = []
+          if (participant.game_participant_gifts) {
+            participant.game_participant_gifts.forEach((giftEntry: any) => {
+              const emoji = giftEntry.gifts?.emoji || "🎁"
+              for (let i = 0; i < giftEntry.quantity; i++) {
+                gifts.push(emoji)
+              }
+            })
+          }
+
+          return mapDbPlayerToFrontendPlayer(participant.players!, participant.color, participant.gift_value, gifts)
         })
+
         setDbPlayers(mappedPlayers)
+
+        // Check if we need to start countdown (2+ players)
+        if (mappedPlayers.length >= 2 && gameCountdown === null) {
+          console.log("🕐 Starting countdown - 2+ players joined")
+          await startGameCountdown(gameId, 60)
+        }
       } catch (err: any) {
         console.error("Error loading game participants:", err)
         setError(err.message || "Failed to load game participants.")
@@ -173,7 +201,7 @@ export function useGameDatabase() {
         setLoading(false)
       }
     },
-    [mapDbPlayerToFrontendPlayer],
+    [gameCountdown],
   )
 
   // Join game with gifts (uses RPC)
@@ -268,16 +296,44 @@ export function useGameDatabase() {
     }
   }, [])
 
-  // Start game countdown (client-side for now)
-  const startGameCountdown = useCallback(async (gameId: string, duration: number) => {
-    setGameCountdown(duration)
-    // In a real app, you might trigger a server-side countdown here
+  // Start game countdown
+  const startGameCountdown = useCallback(async (gameId: string, duration = 60) => {
+    try {
+      await dbHelpers.startGameCountdown(gameId, duration)
+      setGameCountdown(duration)
+
+      // Start local countdown timer
+      const countdownInterval = setInterval(async () => {
+        const remaining = await dbHelpers.getGameCountdown(gameId)
+        if (remaining !== null) {
+          setGameCountdown(remaining)
+          if (remaining <= 0) {
+            clearInterval(countdownInterval)
+            setGameCountdown(0)
+          }
+        } else {
+          clearInterval(countdownInterval)
+          setGameCountdown(null)
+        }
+      }, 1000)
+
+      return countdownInterval
+    } catch (err: any) {
+      console.error("Error starting game countdown:", err)
+      setError(err.message || "Failed to start game countdown.")
+    }
   }, [])
 
-  // Get game countdown (client-side for now)
+  // Get game countdown
   const getGameCountdown = useCallback(async (gameId: string) => {
-    // In a real app, you might fetch countdown from server here
-    return null
+    try {
+      const remaining = await dbHelpers.getGameCountdown(gameId)
+      setGameCountdown(remaining)
+      return remaining
+    } catch (err: any) {
+      console.error("Error getting game countdown:", err)
+      return null
+    }
   }, [])
 
   // --- Subscriptions ---
@@ -301,11 +357,20 @@ export function useGameDatabase() {
       setDbGameLogs((prev) => [newLog, ...prev.slice(0, 19)])
     })
 
+    const gamesChannel = dbHelpers.subscribeToGames(currentGameId, (payload) => {
+      console.log("Game state change:", payload)
+      if (payload.new.countdown_ends_at) {
+        // Update countdown when it changes
+        getGameCountdown(currentGameId)
+      }
+    })
+
     return () => {
       participantsChannel.unsubscribe()
       logsChannel.unsubscribe()
+      gamesChannel.unsubscribe()
     }
-  }, [currentGameId, loadGameParticipants])
+  }, [currentGameId, loadGameParticipants, getGameCountdown])
 
   useEffect(() => {
     if (!currentPlayer?.id) return
