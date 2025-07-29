@@ -28,6 +28,8 @@ import {
   Users,
   Zap,
   AlertCircle,
+  Play,
+  Clock,
 } from "lucide-react"
 import Image from "next/image"
 
@@ -52,6 +54,20 @@ interface TelegramWebApp {
   expand: () => void
   close: () => void
   openLink: (url: string) => void
+  showPopup: (
+    params: {
+      title?: string
+      message: string
+      buttons?: Array<{
+        id?: string
+        type?: "default" | "ok" | "close" | "cancel" | "destructive"
+        text: string
+      }>
+    },
+    callback?: (buttonId: string) => void,
+  ) => void
+  showAlert: (message: string, callback?: () => void) => void
+  showConfirm: (message: string, callback?: (confirmed: boolean) => void) => void
   MainButton: {
     text: string
     color: string
@@ -61,11 +77,33 @@ interface TelegramWebApp {
     show: () => void
     onClick: (callback: () => void) => void
     hide: () => void
+    setText: (text: string) => void
+    setParams: (params: { color?: string; text_color?: string; is_active?: boolean; is_visible?: boolean }) => void
+  }
+  BackButton: {
+    isVisible: boolean
+    show: () => void
+    hide: () => void
+    onClick: (callback: () => void) => void
   }
   HapticFeedback: {
     impactOccurred: (style: "light" | "medium" | "heavy" | "rigid" | "soft") => void
     notificationOccurred: (type: "error" | "success" | "warning") => void
     selectionChanged: () => void
+  }
+  viewportHeight: number
+  viewportStableHeight: number
+  isExpanded: boolean
+  platform: string
+  colorScheme: "light" | "dark"
+  themeParams: {
+    bg_color?: string
+    text_color?: string
+    hint_color?: string
+    link_color?: string
+    button_color?: string
+    button_text_color?: string
+    secondary_bg_color?: string
   }
 }
 
@@ -210,7 +248,7 @@ export default function WheelGame() {
 
     return new Promise((resolve, reject) => {
       const img = new Image()
-      // Remove crossOrigin to avoid CORS issues with Telegram avatars
+      img.crossOrigin = "anonymous" // Set crossOrigin for CORS
       img.onload = () => {
         console.log("Avatar loaded successfully:", photoUrl)
         avatarCache.current.set(photoUrl, img)
@@ -322,8 +360,6 @@ export default function WheelGame() {
       ctx.closePath()
       ctx.fill()
 
-      // Remove the white border between segments
-
       // Draw avatar and value if segment is large enough
       if (segmentAngle > 0.2) {
         const textAngle = currentAngle + segmentAngle / 2
@@ -333,10 +369,9 @@ export default function WheelGame() {
 
         ctx.save()
         ctx.translate(textX, textY)
-        // Remove rotation adjustment since we want avatars to stay upright
 
         // Draw avatar circle
-        const avatarRadius = 14 // Reduced from 18 to 14
+        const avatarRadius = 14
 
         // Check if player has Telegram photo and it's cached
         if (player.telegramUser?.photo_url && avatarCache.current.has(player.telegramUser.photo_url)) {
@@ -346,7 +381,7 @@ export default function WheelGame() {
           try {
             ctx.save()
             ctx.beginPath()
-            ctx.arc(0, 0, avatarRadius, 0, 2 * Math.PI) // Changed from (0, -8) to (0, 0)
+            ctx.arc(0, 0, avatarRadius, 0, 2 * Math.PI)
             ctx.clip()
             ctx.drawImage(avatarImg, -avatarRadius, -avatarRadius, avatarRadius * 2, avatarRadius * 2)
             ctx.restore()
@@ -355,22 +390,13 @@ export default function WheelGame() {
             ctx.strokeStyle = "#fff"
             ctx.lineWidth = 2
             ctx.beginPath()
-            ctx.arc(0, 0, avatarRadius, 0, 2 * Math.PI) // Changed from (0, -8) to (0, 0)
+            ctx.arc(0, 0, avatarRadius, 0, 2 * Math.PI)
             ctx.stroke()
           } catch (error) {
             console.error("Error drawing avatar for:", player.name, error)
             drawFallbackAvatar()
           }
         } else {
-          // Draw fallback avatar
-          console.log(
-            "Drawing fallback avatar for:",
-            player.name,
-            "Has photo URL:",
-            !!player.telegramUser?.photo_url,
-            "Is cached:",
-            player.telegramUser?.photo_url ? avatarCache.current.has(player.telegramUser.photo_url) : false,
-          )
           drawFallbackAvatar()
         }
 
@@ -384,7 +410,7 @@ export default function WheelGame() {
 
           ctx.fillStyle = gradient
           ctx.beginPath()
-          ctx.arc(0, 0, avatarRadius, 0, 2 * Math.PI) // Changed from (0, -8) to (0, 0)
+          ctx.arc(0, 0, avatarRadius, 0, 2 * Math.PI)
           ctx.fill()
 
           // Draw white border around avatar
@@ -397,7 +423,7 @@ export default function WheelGame() {
           ctx.font = "bold 16px DM Sans"
           ctx.textAlign = "center"
           ctx.textBaseline = "middle"
-          ctx.fillText(player.name.charAt(0).toUpperCase(), 0, 0) // Changed from (0, -8) to (0, 0)
+          ctx.fillText(player.name.charAt(0).toUpperCase(), 0, 0)
         }
 
         ctx.restore()
@@ -419,17 +445,17 @@ export default function WheelGame() {
     const balance = Number.parseInt(playerBalance)
 
     if (!name || !balance || balance < 1 || balance > 10000) {
-      alert("Please enter a valid name and balance (1-10,000)!")
+      webApp?.showAlert("Пожалуйста, введите корректное имя и баланс (1-10,000)!")
       return
     }
 
     if (players.some((p) => p.name === name)) {
-      alert("Player name already exists!")
+      webApp?.showAlert("Игрок с таким именем уже существует!")
       return
     }
 
     if (players.length >= 15) {
-      alert("Maximum 15 players allowed!")
+      webApp?.showAlert("Максимум 15 игроков!")
       return
     }
 
@@ -440,13 +466,15 @@ export default function WheelGame() {
       color: COLORS[players.length % COLORS.length],
       gifts: ["🎁", "💎", "⭐"].slice(0, Math.floor(Math.random() * 3) + 1), // Random 1-3 gifts
       giftValue: Math.random() * 0.5 + 0.1, // Random gift value between 0.1-0.6 TON
-      // No telegramUser for test players - they'll get fallback avatars
     }
 
     setPlayers((prev) => [...prev, newPlayer])
-    addToLog(`🎉 ${name} joined with $${balance.toLocaleString()}!`, "join")
+    addToLog(`🎉 ${name} присоединился с $${balance.toLocaleString()}!`, "join")
     setPlayerName("")
     setPlayerBalance("")
+
+    // Haptic feedback
+    webApp?.HapticFeedback?.impactOccurred("light")
   }
 
   const spinWheel = useCallback(async () => {
@@ -454,20 +482,23 @@ export default function WheelGame() {
     const activePlayers = dbPlayers.length > 0 ? dbPlayers : players
 
     if (activePlayers.length < 2) {
-      addToLog("⚠️ Need at least 2 players to spin the wheel!", "info")
+      addToLog("⚠️ Нужно минимум 2 игрока для запуска колеса!", "info")
+      webApp?.showAlert("Нужно минимум 2 игрока для запуска колеса!")
       return
     }
 
     if (isSpinning) return
 
     setIsSpinning(true)
-    // Добавлено для демонстрации QuickEdit: функционал многократного добавления подарков уже реализован.
-    addToLog("🎰 Wheel is spinning... Good luck everyone!", "spin")
+    addToLog("🎰 Колесо крутится... Удачи всем!", "spin")
 
     // Add to database log
     if (currentGameId) {
-      await addDbGameLog(currentGameId, null, "spin", "🎰 Wheel is spinning... Good luck everyone!")
+      await addDbGameLog(currentGameId, null, "spin", "🎰 Колесо крутится... Удачи всем!")
     }
+
+    // Haptic feedback for spin
+    webApp?.HapticFeedback?.impactOccurred("heavy")
 
     // Preload avatars before spinning
     await preloadAvatars()
@@ -513,11 +544,11 @@ export default function WheelGame() {
               currentGameId,
               currentPlayer.id,
               "winner",
-              `🎉 ${selectedWinner.name} won ${totalGiftValue.toFixed(3)} TON in gifts!`,
+              `🎉 ${selectedWinner.name} выиграл ${totalGiftValue.toFixed(3)} TON в подарках!`,
             )
 
             // Reload match history
-            await loadMatchHistory(10) // Load only recent history after game completion
+            await loadMatchHistory(10)
           } catch (error) {
             console.error("Failed to complete game in database:", error)
           }
@@ -528,22 +559,24 @@ export default function WheelGame() {
           id: Date.now().toString(),
           rollNumber: rollNumber,
           timestamp: new Date(),
-          players: [...activePlayers], // Use activePlayers for consistency
+          players: [...activePlayers],
           winner: selectedWinner,
-          totalPot: totalGiftValue, // Only TON gifts now
+          totalPot: totalGiftValue,
           winnerChance: winnerChance,
         }
         setMatchHistory((prev) => [matchEntry, ...prev])
 
         setWinner(selectedWinner)
         setShowWinnerModal(true)
-        addToLog(`🎉 ${selectedWinner.name} won ${totalGiftValue.toFixed(3)} TON in gifts!`, "winner")
-        setRollNumber((prev) => prev + 1) // Increment roll number for next game
+        addToLog(`🎉 ${selectedWinner.name} выиграл ${totalGiftValue.toFixed(3)} TON в подарках!`, "winner")
+        setRollNumber((prev) => prev + 1)
+
+        // Winner haptic feedback
+        webApp?.HapticFeedback?.notificationOccurred("success")
       }
       setIsSpinning(false)
       setPlayers([])
       setWinner(null)
-      setShowWinnerModal(false)
 
       // Create new game for next round
       if (currentPlayer) {
@@ -571,7 +604,8 @@ export default function WheelGame() {
     completeGame,
     loadMatchHistory,
     getCurrentGame,
-    dbPlayers, // Added dbPlayers to dependencies
+    dbPlayers,
+    webApp,
   ])
 
   // Auto-spin when countdown reaches 0
@@ -637,7 +671,7 @@ export default function WheelGame() {
         emoji: item.gifts?.emoji || "🎁",
         name: item.gifts?.name || "Unknown Gift",
         value: item.gifts?.base_value || 0,
-        rarity: item.gifts?.rarity || "common",
+        rarity: (item.gifts?.rarity as "common" | "rare" | "epic" | "legendary") || "common",
         quantity: item.quantity || 0,
         nft_address: item.gifts?.nft_address,
         nft_item_id: item.gifts?.nft_item_id,
@@ -698,6 +732,18 @@ export default function WheelGame() {
         // Configure main button (hidden by default)
         tg.MainButton.hide()
 
+        // Configure back button
+        tg.BackButton.hide()
+
+        // Set theme colors based on Telegram theme
+        const root = document.documentElement
+        if (tg.themeParams.bg_color) {
+          root.style.setProperty("--tg-bg-color", tg.themeParams.bg_color)
+        }
+        if (tg.themeParams.text_color) {
+          root.style.setProperty("--tg-text-color", tg.themeParams.text_color)
+        }
+
         // Get user data from Telegram
         const user = tg.initDataUnsafe?.user
         if (user) {
@@ -715,7 +761,7 @@ export default function WheelGame() {
               const displayName = user.username || user.first_name || `User${user.id}`
               setPlayerName(displayName)
 
-              addToLog(`🎯 Welcome back, ${displayName}! Ready to win big? 🏆`, "info")
+              addToLog(`🎯 Добро пожаловать, ${displayName}! Готовы выиграть? 🏆`, "info")
 
               // Get or create current game
               const game = await getCurrentGame(rollNumber)
@@ -727,18 +773,33 @@ export default function WheelGame() {
               }
             } else {
               console.log("Failed to initialize player in database, using offline mode")
-              addToLog("⚠️ Database connection failed. Playing in offline mode.", "info")
+              addToLog("⚠️ Ошибка подключения к базе данных. Играем в оффлайн режиме.", "info")
             }
           } catch (error) {
             console.error("Failed to initialize player:", error)
-            addToLog("⚠️ Failed to connect to database. Using offline mode.", "info")
+            addToLog("⚠️ Не удалось подключиться к базе данных. Используем оффлайн режим.", "info")
           }
 
           // Show welcome notification
           tg.HapticFeedback?.notificationOccurred("success")
         } else {
           console.log("No Telegram user data found")
-          addToLog("⚡ Telegram WebApp ready! Join the wheel to win TON and gifts! 🎁", "info")
+          addToLog("⚡ Telegram WebApp готов! Присоединяйтесь к колесу, чтобы выиграть TON и подарки! 🎁", "info")
+        }
+
+        // Handle viewport changes for mobile optimization
+        const handleViewportChange = () => {
+          if (tg.isExpanded) {
+            document.body.style.height = `${tg.viewportHeight}px`
+          }
+        }
+
+        // Listen for viewport changes
+        window.addEventListener("resize", handleViewportChange)
+        handleViewportChange()
+
+        return () => {
+          window.removeEventListener("resize", handleViewportChange)
         }
       } else {
         // Retry initialization if Telegram WebApp is not ready yet
@@ -793,6 +854,9 @@ export default function WheelGame() {
       }
       return prev
     })
+
+    // Haptic feedback for selection
+    webApp?.HapticFeedback?.selectionChanged()
   }
 
   const getTotalGiftValue = () => {
@@ -819,24 +883,24 @@ export default function WheelGame() {
   const copyDepositAddress = () => {
     navigator.clipboard.writeText(NFT_DEPOSIT_TELEGRAM)
     webApp?.HapticFeedback?.notificationOccurred("success")
-    addToLog("📋 Telegram address copied to clipboard!", "info")
+    addToLog("📋 Telegram адрес скопирован в буфер обмена!", "info")
   }
 
   const copyUserMessage = () => {
-    const message = `Hi! I want to deposit my NFT gifts for PvP Wheel. My username: @${telegramUser?.username || telegramUser?.first_name || "user"}`
+    const message = `Привет! Хочу внести свои NFT подарки для PvP Wheel. Мой username: @${telegramUser?.username || telegramUser?.first_name || "user"}`
     navigator.clipboard.writeText(message)
     webApp?.HapticFeedback?.notificationOccurred("success")
-    addToLog("📋 Message copied to clipboard!", "info")
+    addToLog("📋 Сообщение скопировано в буфер обмена!", "info")
   }
 
   const openTelegramDeposit = () => {
     if (!telegramUser) {
       webApp?.HapticFeedback?.notificationOccurred("error")
-      alert("Please connect your Telegram account first!")
+      webApp?.showAlert("Пожалуйста, сначала подключите свой Telegram аккаунт!")
       return
     }
 
-    const message = `Hi! I want to deposit my NFT gifts for PvP Wheel. My username: @${NFT_DEPOSIT_TELEGRAM.substring(1)}`
+    const message = `Привет! Хочу внести свои NFT подарки для PvP Wheel. Мой username: @${telegramUser.username || telegramUser.first_name || "user"}`
     const telegramUrl = `https://t.me/${NFT_DEPOSIT_TELEGRAM.substring(1)}?text=${encodeURIComponent(message)}`
 
     if (webApp) {
@@ -846,13 +910,13 @@ export default function WheelGame() {
     }
 
     webApp?.HapticFeedback?.impactOccurred("medium")
-    addToLog(`📱 Opening Telegram to contact ${NFT_DEPOSIT_TELEGRAM} for NFT deposit`, "info")
+    addToLog(`📱 Открываем Telegram для связи с ${NFT_DEPOSIT_TELEGRAM} для внесения NFT`, "info")
   }
 
   const startNftDeposit = async () => {
     if (!telegramUser) {
       webApp?.HapticFeedback?.notificationOccurred("error")
-      alert("Please connect your Telegram account first!")
+      webApp?.showAlert("Пожалуйста, сначала подключите свой Telegram аккаунт!")
       return
     }
 
@@ -863,16 +927,17 @@ export default function WheelGame() {
       // Open Telegram chat with @grinchroll_bot for NFT gift transfer
       openTelegramDeposit()
 
-      addToLog(`📱 Contact ${NFT_DEPOSIT_TELEGRAM} in Telegram to deposit your NFT gifts!`, "info")
+      addToLog(`📱 Свяжитесь с ${NFT_DEPOSIT_TELEGRAM} в Telegram для внесения ваших NFT подарков!`, "info")
 
       // Reset depositing state after a moment
       setTimeout(() => {
-        addToLog(` Send your NFT gifts to ${NFT_DEPOSIT_TELEGRAM} and mention your username.`, "info")
+        addToLog(`Отправьте ваши NFT подарки на ${NFT_DEPOSIT_TELEGRAM} и укажите ваш username.`, "info")
+        setIsDepositing(false)
       }, 2000)
     } catch (error) {
       console.error("NFT deposit error:", error)
       webApp?.HapticFeedback?.notificationOccurred("error")
-      addToLog(`❌ Failed to open Telegram. Please manually contact ${NFT_DEPOSIT_TELEGRAM}.`, "info")
+      addToLog(`❌ Не удалось открыть Telegram. Пожалуйста, свяжитесь с ${NFT_DEPOSIT_TELEGRAM} вручную.`, "info")
       setIsDepositing(false)
     }
   }
@@ -881,20 +946,23 @@ export default function WheelGame() {
     if (!currentPlayer) return
 
     webApp?.HapticFeedback?.impactOccurred("light")
-    addToLog("🔄 Refreshing inventory...", "info")
+    addToLog("🔄 Обновляем инвентарь...", "info")
 
     try {
       await loadPlayerInventory(currentPlayer.id)
-      addToLog("✅ Inventory refreshed!", "info")
+      addToLog("✅ Инвентарь обновлен!", "info")
+      webApp?.HapticFeedback?.notificationOccurred("success")
     } catch (error) {
       console.error("Inventory refresh error:", error)
-      addToLog("❌ Failed to refresh inventory.", "info")
+      addToLog("❌ Не удалось обновить инвентарь.", "info")
+      webApp?.HapticFeedback?.notificationOccurred("error")
     }
   }
 
   const confirmGiftSelection = async () => {
     if (selectedGifts.length === 0) {
       webApp?.HapticFeedback?.notificationOccurred("error")
+      webApp?.showAlert("Выберите хотя бы один подарок!")
       return
     }
 
@@ -904,13 +972,13 @@ export default function WheelGame() {
 
     if (!name) {
       webApp?.HapticFeedback?.notificationOccurred("error")
-      alert("Unable to get player name!")
+      webApp?.showAlert("Не удалось получить имя игрока!")
       return
     }
 
     if (activePlayers.length >= 15) {
       webApp?.HapticFeedback?.notificationOccurred("error")
-      alert("Maximum 15 players allowed!")
+      webApp?.showAlert("Максимум 15 игроков!")
       return
     }
 
@@ -940,14 +1008,14 @@ export default function WheelGame() {
     // Join game in database (this function now handles both new joins and adding more gifts)
     if (currentGameId && currentPlayer) {
       try {
-        await joinGameWithGifts(currentGameId, currentPlayer.id, giftSelections, playerColor, playerPosition, name) // Pass player name
-        // The log message is now handled by the RPC function in Supabase for consistency
+        await joinGameWithGifts(currentGameId, currentPlayer.id, giftSelections, playerColor, playerPosition, name)
         setSelectedGifts([])
         setShowGiftPopup(false)
         // Participants and inventory will be reloaded by subscription
       } catch (error) {
         console.error("Failed to add gifts to game:", error)
-        addToLog(`❌ Failed to add gifts: ${dbError || "Unknown error"}`, "error")
+        addToLog(`❌ Не удалось добавить подарки: ${dbError || "Неизвестная ошибка"}`, "info")
+        webApp?.HapticFeedback?.notificationOccurred("error")
       }
     } else {
       // Fallback for offline mode (no database connection)
@@ -971,7 +1039,7 @@ export default function WheelGame() {
 
       setPlayers((prev) => [...prev, newPlayer])
       addToLog(
-        `🎉 ${name} joined with ${selectedGiftEmojis.length} gifts worth ${totalGiftValue.toFixed(3)} TON! (Offline)`,
+        `🎉 ${name} присоединился с ${selectedGiftEmojis.length} подарками на сумму ${totalGiftValue.toFixed(3)} TON! (Оффлайн)`,
         "join",
       )
       setSelectedGifts([])
@@ -999,7 +1067,7 @@ export default function WheelGame() {
 
   // Render the component
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white flex flex-col items-center justify-center p-4 safe-area-inset">
       {dbError && (
         <div className="fixed top-0 left-0 right-0 bg-red-600 text-white p-2 text-center z-50 flex items-center justify-center gap-2">
           <AlertCircle className="h-5 w-5" />
@@ -1018,11 +1086,11 @@ export default function WheelGame() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Badge variant="secondary" className="bg-gray-700 text-gray-300">
-                    Roll #{currentGameId ? rollNumber : "Offline"}
+                    Раунд #{currentGameId ? rollNumber : "Оффлайн"}
                   </Badge>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Current Game Roll Number</p>
+                  <p>Номер текущего раунда</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -1030,11 +1098,11 @@ export default function WheelGame() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Badge variant="secondary" className={`${currentGameId ? "bg-green-600" : "bg-red-600"} text-white`}>
-                    {currentGameId ? "Online" : "Offline"}
+                    {currentGameId ? "Онлайн" : "Оффлайн"}
                   </Badge>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>{currentGameId ? "Connected to database" : "Not connected to database"}</p>
+                  <p>{currentGameId ? "Подключено к базе данных" : "Не подключено к базе данных"}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -1043,7 +1111,10 @@ export default function WheelGame() {
         <CardContent>
           <Tabs
             value={activeTab}
-            onValueChange={(value) => setActiveTab(value as "pvp" | "gifts" | "earn")}
+            onValueChange={(value) => {
+              setActiveTab(value as "pvp" | "gifts" | "earn")
+              webApp?.HapticFeedback?.selectionChanged()
+            }}
             className="w-full"
           >
             <TabsList className="grid w-full grid-cols-3 bg-gray-700/50">
@@ -1051,19 +1122,19 @@ export default function WheelGame() {
                 value="pvp"
                 className="text-white data-[state=active]:bg-purple-600 data-[state=active]:text-white"
               >
-                <Users className="h-4 w-4 mr-2" /> PvP Wheel
+                <Users className="h-4 w-4 mr-2" /> PvP Колесо
               </TabsTrigger>
               <TabsTrigger
                 value="gifts"
                 className="text-white data-[state=active]:bg-purple-600 data-[state=active]:text-white"
               >
-                <Gift className="h-4 w-4 mr-2" /> My Gifts
+                <Gift className="h-4 w-4 mr-2" /> Мои Подарки
               </TabsTrigger>
               <TabsTrigger
                 value="earn"
                 className="text-white data-[state=active]:bg-purple-600 data-[state=active]:text-white"
               >
-                <DollarSign className="h-4 w-4 mr-2" /> Earn TON
+                <DollarSign className="h-4 w-4 mr-2" /> Заработать TON
               </TabsTrigger>
             </TabsList>
 
@@ -1074,35 +1145,39 @@ export default function WheelGame() {
               </div>
 
               <div className="text-center text-2xl font-bold text-yellow-300">
-                Total Pot: {totalGiftValue.toFixed(3)} TON
+                Общий банк: {totalGiftValue.toFixed(3)} TON
               </div>
 
-              <div className="text-center text-xl font-semibold text-green-300">
+              <div className="text-center text-xl font-semibold text-green-300 flex items-center justify-center gap-2">
                 {gameCountdown !== null && gameCountdown > 0 ? (
-                  <span>Spin in: {formatTime(gameCountdown)}</span>
+                  <>
+                    <Clock className="h-5 w-5" />
+                    <span>Запуск через: {formatTime(gameCountdown)}</span>
+                  </>
                 ) : (
-                  <span>Waiting for players...</span>
+                  <span>Ожидаем игроков...</span>
                 )}
               </div>
 
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between text-gray-300">
-                  <span className="font-semibold">Players ({activePlayers.length}/15)</span>
+                  <span className="font-semibold">Игроки ({activePlayers.length}/15)</span>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      loadMatchHistory(50) // Load full history when opening modal
+                      loadMatchHistory(50)
                       setShowMatchHistory(true)
+                      webApp?.HapticFeedback?.impactOccurred("light")
                     }}
                     className="text-gray-300 hover:text-white"
                   >
-                    <History className="h-4 w-4 mr-2" /> Match History
+                    <History className="h-4 w-4 mr-2" /> История
                   </Button>
                 </div>
                 <ScrollArea className="h-40 w-full rounded-md border border-gray-700 p-2 bg-gray-900/50">
                   {activePlayers.length === 0 ? (
-                    <p className="text-center text-gray-400 py-4">No players yet. Be the first!</p>
+                    <p className="text-center text-gray-400 py-4">Пока нет игроков. Будьте первым!</p>
                   ) : (
                     activePlayers.map((player) => (
                       <div
@@ -1133,6 +1208,7 @@ export default function WheelGame() {
                             onClick={() => {
                               setSelectedPlayer(player)
                               setShowPlayerGiftsPopup(true)
+                              webApp?.HapticFeedback?.impactOccurred("light")
                             }}
                             className="text-gray-400 hover:text-gray-200 p-1 h-auto"
                           >
@@ -1140,9 +1216,10 @@ export default function WheelGame() {
                           </Button>
                         </div>
                         <div className="flex items-center gap-1 text-yellow-300 font-semibold">
-                          {player.gifts.map((emoji, i) => (
+                          {player.gifts.slice(0, 3).map((emoji, i) => (
                             <span key={i}>{emoji}</span>
                           ))}
+                          {player.gifts.length > 3 && <span>+{player.gifts.length - 3}</span>}
                           <span>({player.giftValue.toFixed(3)} TON)</span>
                         </div>
                       </div>
@@ -1154,25 +1231,28 @@ export default function WheelGame() {
               <div className="flex flex-col gap-2">
                 {telegramUser && (
                   <Button
-                    onClick={() => setShowGiftPopup(true)}
+                    onClick={() => {
+                      setShowGiftPopup(true)
+                      webApp?.HapticFeedback?.impactOccurred("medium")
+                    }}
                     className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded-lg transition-colors"
                     disabled={isSpinning || dbLoading}
                   >
-                    <Gift className="h-5 w-5 mr-2" /> Add Gifts & Join
+                    <Gift className="h-5 w-5 mr-2" /> Добавить Подарки и Играть
                   </Button>
                 )}
                 {!telegramUser && (
                   <>
                     <Input
                       type="text"
-                      placeholder="Your Name"
+                      placeholder="Ваше Имя"
                       value={playerName}
                       onChange={(e) => setPlayerName(e.target.value)}
                       className="bg-gray-700/50 border-gray-600 text-white placeholder-gray-400"
                     />
                     <Input
                       type="number"
-                      placeholder="Balance (TON)"
+                      placeholder="Баланс (TON)"
                       value={playerBalance}
                       onChange={(e) => setPlayerBalance(e.target.value)}
                       className="bg-gray-700/50 border-gray-600 text-white placeholder-gray-400"
@@ -1182,24 +1262,37 @@ export default function WheelGame() {
                       className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded-lg transition-colors"
                       disabled={isSpinning || dbLoading}
                     >
-                      Join Game (Offline)
+                      Присоединиться (Оффлайн)
                     </Button>
                   </>
                 )}
                 <Button
-                  onClick={spinWheel}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg transition-colors"
+                  onClick={() => {
+                    spinWheel()
+                    webApp?.HapticFeedback?.impactOccurred("heavy")
+                  }}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
                   disabled={isSpinning || activePlayers.length < 2 || dbLoading}
                 >
-                  {isSpinning ? "Spinning..." : "Spin Wheel"}
+                  {isSpinning ? (
+                    <>
+                      <RefreshCw className="h-5 w-5 animate-spin" />
+                      Крутится...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-5 w-5" />
+                      Запустить Колесо
+                    </>
+                  )}
                 </Button>
               </div>
 
               <div className="flex flex-col gap-2">
-                <span className="font-semibold text-gray-300">Game Log</span>
+                <span className="font-semibold text-gray-300">Лог Игры</span>
                 <ScrollArea className="h-32 w-full rounded-md border border-gray-700 p-2 bg-gray-900/50">
                   {dbGameLogs.length === 0 && gameLog.length === 0 ? (
-                    <p className="text-center text-gray-400 py-4">No game events yet.</p>
+                    <p className="text-center text-gray-400 py-4">Пока нет событий игры.</p>
                   ) : (
                     (dbGameLogs.length > 0 ? dbGameLogs : gameLog).map((log) => (
                       <div key={log.id} className="text-sm text-gray-300 py-1">
@@ -1227,7 +1320,7 @@ export default function WheelGame() {
             <TabsContent value="gifts" className="mt-4 space-y-4">
               <Card className="bg-gray-900/50 border-gray-700">
                 <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle className="text-xl text-purple-300">My Inventory</CardTitle>
+                  <CardTitle className="text-xl text-purple-300">Мой Инвентарь</CardTitle>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1240,7 +1333,10 @@ export default function WheelGame() {
                 <CardContent>
                   <ScrollArea className="h-60 w-full rounded-md border border-gray-700 p-2 bg-gray-800/50">
                     {userInventory.length === 0 ? (
-                      <p className="text-center text-gray-400 py-4">No gifts in your inventory.</p>
+                      <div className="text-center text-gray-400 py-4">
+                        <p>В вашем инвентаре нет подарков.</p>
+                        <p className="text-sm mt-2">Новые игроки получают стартовые подарки автоматически!</p>
+                      </div>
                     ) : (
                       userInventory.map((gift) => (
                         <div
@@ -1257,7 +1353,10 @@ export default function WheelGame() {
                                 </Badge>
                               )}
                               <p className={`text-sm ${getRarityColor(gift.rarity)}`}>
-                                {gift.rarity.charAt(0).toUpperCase() + gift.rarity.slice(1)}
+                                {gift.rarity === "common" && "Обычный"}
+                                {gift.rarity === "rare" && "Редкий"}
+                                {gift.rarity === "epic" && "Эпический"}
+                                {gift.rarity === "legendary" && "Легендарный"}
                               </p>
                             </div>
                           </div>
@@ -1273,7 +1372,7 @@ export default function WheelGame() {
                     onClick={openNftDepositPopup}
                     className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg transition-colors"
                   >
-                    <Zap className="h-5 w-5 mr-2" /> Deposit NFT Gifts
+                    <Zap className="h-5 w-5 mr-2" /> Внести NFT Подарки
                   </Button>
                 </CardContent>
               </Card>
@@ -1282,30 +1381,36 @@ export default function WheelGame() {
             <TabsContent value="earn" className="mt-4 space-y-4">
               <Card className="bg-gray-900/50 border-gray-700">
                 <CardHeader>
-                  <CardTitle className="text-xl text-purple-300">Earn More TON</CardTitle>
+                  <CardTitle className="text-xl text-purple-300">Заработать Больше TON</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4 text-gray-300">
-                  <p>Want to get more gifts and increase your chances of winning? Here are some ways to earn TON:</p>
+                  <p>
+                    Хотите получить больше подарков и увеличить свои шансы на победу? Вот несколько способов заработать
+                    TON:
+                  </p>
                   <ul className="list-disc list-inside space-y-2">
                     <li>
-                      <span className="font-semibold text-green-400">Participate in games:</span> Win the wheel to earn
-                      the total gift pot!
+                      <span className="font-semibold text-green-400">Участвуйте в играх:</span> Выигрывайте колесо,
+                      чтобы получить весь банк подарков!
                     </li>
                     <li>
-                      <span className="font-semibold text-blue-400">Refer friends:</span> Invite new players to the game
-                      and earn a commission on their winnings.
+                      <span className="font-semibold text-blue-400">Приглашайте друзей:</span> Приводите новых игроков в
+                      игру и получайте комиссию с их выигрышей.
                     </li>
                     <li>
-                      <span className="font-semibold text-yellow-400">Complete tasks:</span> Look out for special tasks
-                      and promotions announced in our Telegram channel.
+                      <span className="font-semibold text-yellow-400">Выполняйте задания:</span> Следите за специальными
+                      заданиями и акциями в нашем Telegram канале.
                     </li>
                     <li>
-                      <span className="font-semibold text-purple-400">Stake TON:</span> Explore staking opportunities to
-                      earn passive income.
+                      <span className="font-semibold text-purple-400">Стейкинг TON:</span> Изучите возможности стейкинга
+                      для получения пассивного дохода.
                     </li>
                   </ul>
-                  <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg transition-colors">
-                    <ExternalLink className="h-5 w-5 mr-2" /> Join Telegram Channel
+                  <Button
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg transition-colors"
+                    onClick={() => webApp?.HapticFeedback?.impactOccurred("light")}
+                  >
+                    <ExternalLink className="h-5 w-5 mr-2" /> Присоединиться к Telegram Каналу
                   </Button>
                 </CardContent>
               </Card>
@@ -1318,7 +1423,7 @@ export default function WheelGame() {
       <Dialog open={showWinnerModal} onOpenChange={setShowWinnerModal}>
         <DialogContent className="sm:max-w-[425px] bg-gray-800/90 backdrop-blur-sm border-gray-700 text-white p-6 rounded-lg shadow-xl">
           <DialogHeader>
-            <DialogTitle className="text-3xl font-bold text-yellow-400 text-center">🎉 Winner! 🎉</DialogTitle>
+            <DialogTitle className="text-3xl font-bold text-yellow-400 text-center">🎉 Победитель! 🎉</DialogTitle>
           </DialogHeader>
           <div className="text-center my-4">
             {winner && (
@@ -1341,14 +1446,21 @@ export default function WheelGame() {
                 )}
                 <p className="text-3xl font-extrabold text-green-400">{winner.name}</p>
                 <p className="text-xl text-gray-300 mt-2">
-                  Won <span className="font-bold text-yellow-300">{winner.giftValue.toFixed(3)} TON</span> in gifts!
+                  Выиграл <span className="font-bold text-yellow-300">{winner.giftValue.toFixed(3)} TON</span> в
+                  подарках!
                 </p>
               </>
             )}
           </div>
           <DialogFooter className="flex justify-center">
-            <Button onClick={() => setShowWinnerModal(false)} className="bg-purple-600 hover:bg-purple-700 text-white">
-              Play Again
+            <Button
+              onClick={() => {
+                setShowWinnerModal(false)
+                webApp?.HapticFeedback?.impactOccurred("light")
+              }}
+              className="bg-purple-600 hover:bg-purple-700 text-white"
+            >
+              Играть Снова
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1358,13 +1470,14 @@ export default function WheelGame() {
       <Dialog open={showGiftPopup} onOpenChange={setShowGiftPopup}>
         <DialogContent className="sm:max-w-[425px] bg-gray-800/90 backdrop-blur-sm border-gray-700 text-white p-6 rounded-lg shadow-xl">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-purple-300">Select Gifts to Join</DialogTitle>
+            <DialogTitle className="text-2xl font-bold text-purple-300">Выберите Подарки для Игры</DialogTitle>
           </DialogHeader>
           <ScrollArea className="h-60 w-full rounded-md border border-gray-700 p-2 bg-gray-900/50">
             {userInventory.length === 0 ? (
-              <p className="text-center text-gray-400 py-4">
-                Your inventory is empty. Deposit NFT gifts or earn more TON!
-              </p>
+              <div className="text-center text-gray-400 py-4">
+                <p>Ваш инвентарь пуст.</p>
+                <p className="text-sm mt-2">Внесите NFT подарки или заработайте больше TON!</p>
+              </div>
             ) : (
               userInventory.map((gift) => (
                 <div
@@ -1381,7 +1494,10 @@ export default function WheelGame() {
                         </Badge>
                       )}
                       <p className={`text-sm ${getRarityColor(gift.rarity)}`}>
-                        {gift.rarity.charAt(0).toUpperCase() + gift.rarity.slice(1)} ({gift.value.toFixed(3)} TON)
+                        {gift.rarity === "common" && "Обычный"}
+                        {gift.rarity === "rare" && "Редкий"}
+                        {gift.rarity === "epic" && "Эпический"}
+                        {gift.rarity === "legendary" && "Легендарный"} ({gift.value.toFixed(3)} TON)
                       </p>
                     </div>
                   </div>
@@ -1417,19 +1533,23 @@ export default function WheelGame() {
             )}
           </ScrollArea>
           <div className="flex justify-between items-center mt-4 text-lg font-semibold text-gray-200">
-            <span>Total Selected Value:</span>
+            <span>Общая стоимость:</span>
             <span className="text-yellow-300">{getTotalGiftValue().toFixed(3)} TON</span>
           </div>
           <DialogFooter className="flex flex-col gap-2 mt-4">
-            <Button onClick={selectAllGifts} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
-              Select All Available
+            <Button
+              onClick={selectAllGifts}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={userInventory.length === 0}
+            >
+              Выбрать Все Доступные
             </Button>
             <Button
               onClick={confirmGiftSelection}
               className="w-full bg-green-600 hover:bg-green-700 text-white"
               disabled={selectedGifts.length === 0}
             >
-              Confirm & Join Game
+              Подтвердить и Играть
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1439,7 +1559,9 @@ export default function WheelGame() {
       <Dialog open={showPlayerGiftsPopup} onOpenChange={setShowPlayerGiftsPopup}>
         <DialogContent className="sm:max-w-[425px] bg-gray-800/90 backdrop-blur-sm border-gray-700 text-white p-6 rounded-lg shadow-xl">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-purple-300">{selectedPlayer?.name}'s Gifts</DialogTitle>
+            <DialogTitle className="text-2xl font-bold text-purple-300">
+              Подарки игрока {selectedPlayer?.name}
+            </DialogTitle>
           </DialogHeader>
           <div className="my-4">
             {selectedPlayer?.gifts && selectedPlayer.gifts.length > 0 ? (
@@ -1451,18 +1573,21 @@ export default function WheelGame() {
                 ))}
               </div>
             ) : (
-              <p className="text-center text-gray-400">No gifts joined with.</p>
+              <p className="text-center text-gray-400">Нет подарков.</p>
             )}
             <p className="text-center text-xl font-semibold text-yellow-300 mt-4">
-              Total Value: {selectedPlayer?.giftValue.toFixed(3) || "0.000"} TON
+              Общая стоимость: {selectedPlayer?.giftValue.toFixed(3) || "0.000"} TON
             </p>
           </div>
           <DialogFooter className="flex justify-center">
             <Button
-              onClick={() => setShowPlayerGiftsPopup(false)}
+              onClick={() => {
+                setShowPlayerGiftsPopup(false)
+                webApp?.HapticFeedback?.impactOccurred("light")
+              }}
               className="bg-purple-600 hover:bg-purple-700 text-white"
             >
-              Close
+              Закрыть
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1472,16 +1597,16 @@ export default function WheelGame() {
       <Dialog open={showNftDepositPopup} onOpenChange={setShowNftDepositPopup}>
         <DialogContent className="sm:max-w-[425px] bg-gray-800/90 backdrop-blur-sm border-gray-700 text-white p-6 rounded-lg shadow-xl">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-purple-300">Deposit NFT Gifts</DialogTitle>
+            <DialogTitle className="text-2xl font-bold text-purple-300">Внести NFT Подарки</DialogTitle>
           </DialogHeader>
           <div className="my-4 space-y-4 text-gray-300">
             <p>
-              To deposit your NFT gifts, please contact our bot in Telegram and transfer your NFTs. Your gifts will be
-              manually verified and added to your in-game inventory.
+              Чтобы внести ваши NFT подарки, пожалуйста, свяжитесь с нашим ботом в Telegram и переведите ваши NFT. Ваши
+              подарки будут проверены вручную и добавлены в ваш игровой инвентарь.
             </p>
             <div className="flex items-center gap-2 bg-gray-700 p-3 rounded-md">
               <Info className="h-5 w-5 text-blue-400" />
-              <span className="font-semibold">Telegram Bot:</span>
+              <span className="font-semibold">Telegram Бот:</span>
               <span className="ml-auto text-blue-300">{NFT_DEPOSIT_TELEGRAM}</span>
               <Button
                 variant="ghost"
@@ -1493,13 +1618,13 @@ export default function WheelGame() {
               </Button>
             </div>
             <div className="bg-gray-700 p-3 rounded-md space-y-2">
-              <p className="font-semibold">Message to send:</p>
+              <p className="font-semibold">Сообщение для отправки:</p>
               <p className="text-sm bg-gray-800 p-2 rounded-md break-all">
-                {"Hi! I want to deposit my NFT gifts for PvP Wheel. My username: @"}
+                {"Привет! Хочу внести свои NFT подарки для PvP Wheel. Мой username: @"}
                 {telegramUser?.username || telegramUser?.first_name || "user"}
               </p>
               <Button onClick={copyUserMessage} className="w-full bg-gray-600 hover:bg-gray-500 text-white">
-                <Copy className="h-4 w-4 mr-2" /> Copy Message
+                <Copy className="h-4 w-4 mr-2" /> Скопировать Сообщение
               </Button>
             </div>
           </div>
@@ -1509,10 +1634,12 @@ export default function WheelGame() {
               className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg transition-colors"
               disabled={isDepositing || !telegramUser}
             >
-              {isDepositing ? "Opening Telegram..." : "Contact Bot & Deposit"}
+              {isDepositing ? "Открываем Telegram..." : "Связаться с Ботом и Внести"}
             </Button>
             {!telegramUser && (
-              <p className="text-center text-sm text-red-400">Please connect your Telegram account to deposit NFTs.</p>
+              <p className="text-center text-sm text-red-400">
+                Пожалуйста, подключите ваш Telegram аккаунт для внесения NFT.
+              </p>
             )}
           </DialogFooter>
         </DialogContent>
@@ -1522,56 +1649,65 @@ export default function WheelGame() {
       <Dialog open={showMatchHistory} onOpenChange={setShowMatchHistory}>
         <DialogContent className="sm:max-w-[600px] bg-gray-800/90 backdrop-blur-sm border-gray-700 text-white p-6 rounded-lg shadow-xl">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-purple-300">Match History</DialogTitle>
+            <DialogTitle className="text-2xl font-bold text-purple-300">История Матчей</DialogTitle>
           </DialogHeader>
           <div className="flex justify-center gap-2 my-4">
             <Button
               variant={historyFilter === "time" ? "default" : "outline"}
-              onClick={() => setHistoryFilter("time")}
+              onClick={() => {
+                setHistoryFilter("time")
+                webApp?.HapticFeedback?.selectionChanged()
+              }}
               className="bg-purple-600 hover:bg-purple-700 text-white data-[state=active]:bg-purple-700"
             >
-              By Time
+              По Времени
             </Button>
             <Button
               variant={historyFilter === "luckiest" ? "default" : "outline"}
-              onClick={() => setHistoryFilter("luckiest")}
+              onClick={() => {
+                setHistoryFilter("luckiest")
+                webApp?.HapticFeedback?.selectionChanged()
+              }}
               className="bg-purple-600 hover:bg-purple-700 text-white data-[state=active]:bg-purple-700"
             >
-              Luckiest
+              Самые Удачные
             </Button>
             <Button
               variant={historyFilter === "fattest" ? "default" : "outline"}
-              onClick={() => setHistoryFilter("fattest")}
+              onClick={() => {
+                setHistoryFilter("fattest")
+                webApp?.HapticFeedback?.selectionChanged()
+              }}
               className="bg-purple-600 hover:bg-purple-700 text-white data-[state=active]:bg-purple-700"
             >
-              Fattest Pot
+              Самый Большой Банк
             </Button>
           </div>
           <ScrollArea className="h-[400px] w-full rounded-md border border-gray-700 p-2 bg-gray-900/50">
             {sortedMatchHistory.length === 0 ? (
-              <p className="text-center text-gray-400 py-4">No match history yet.</p>
+              <p className="text-center text-gray-400 py-4">Пока нет истории матчей.</p>
             ) : (
               sortedMatchHistory.map((match) => (
                 <Card key={match.id} className="mb-4 bg-gray-800 border-gray-700 text-white">
                   <CardContent className="p-4">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="text-lg font-bold text-yellow-300">Roll #{match.rollNumber}</span>
+                      <span className="text-lg font-bold text-yellow-300">Раунд #{match.rollNumber}</span>
                       <span className="text-sm text-gray-400">{match.timestamp.toLocaleString()}</span>
                     </div>
                     <Separator className="bg-gray-700 my-2" />
                     <div className="flex items-center gap-2 mb-2">
                       <Trophy className="h-5 w-5 text-green-400" />
-                      <span className="font-semibold text-green-300">Winner: {match.winner.name}</span>
+                      <span className="font-semibold text-green-300">Победитель: {match.winner.name}</span>
                       <Badge variant="secondary" className="bg-green-800 text-green-200">
-                        {match.winnerChance.toFixed(2)}% Chance
+                        {match.winnerChance.toFixed(2)}% Шанс
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2 mb-2">
                       <DollarSign className="h-5 w-5 text-yellow-400" />
-                      <span className="font-semibold text-yellow-300">Total Pot: {match.totalPot.toFixed(3)} TON</span>
+                      <span className="font-semibold text-yellow-300">Общий банк: {match.totalPot.toFixed(3)} TON</span>
                     </div>
                     <div className="mt-3">
-                      <span className="font-semibold text-gray-300">Players:</span>
+                      <span className="font-semibold text-gray-300">Игроки:</span>
                       <div className="flex flex-wrap gap-2 mt-1">
                         {match.players.map((player) => (
                           <Badge
@@ -1590,8 +1726,14 @@ export default function WheelGame() {
             )}
           </ScrollArea>
           <DialogFooter className="flex justify-center mt-4">
-            <Button onClick={() => setShowMatchHistory(false)} className="bg-purple-600 hover:bg-purple-700 text-white">
-              Close
+            <Button
+              onClick={() => {
+                setShowMatchHistory(false)
+                webApp?.HapticFeedback?.impactOccurred("light")
+              }}
+              className="bg-purple-600 hover:bg-purple-700 text-white"
+            >
+              Закрыть
             </Button>
           </DialogFooter>
         </DialogContent>
